@@ -126,7 +126,7 @@ const Card = ({ title, children }) => (
   </div>
 );
 
-const Field = ({ label, type="text", name, val, set, opts, disabled=false, placeholder }) => (
+const Field = ({ label, type="text", name, val, set, opts, disabled=false, placeholder = "" }) => (
   <div className="space-y-1">
     <label className="text-[11px] font-bold text-slate-600 font-sans">{label}</label>
     {type==='select' ? (
@@ -143,7 +143,7 @@ const Field = ({ label, type="text", name, val, set, opts, disabled=false, place
   </div>
 );
 
-const Checkbox = ({ name, label, checked, onChange, disabled }) => (
+const Checkbox = ({ name, label, checked, onChange, disabled = false}) => (
   <label className={`flex items-center gap-2 cursor-pointer group font-sans ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
     <input
       type="checkbox"
