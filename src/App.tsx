@@ -201,7 +201,7 @@ const SectionHeader = ({ icon: Icon, title, color }) => {
 export default function App() {
   const [view, setView] = useState('input');
   const [tier, setTier] = useState('premium');
-  const mainRef = useRef(null); 
+  const mainRef = useRef<HTMLDivElement | null>(null); 
 
   // 画面遷移時にスクロールをトップに戻す
   useEffect(() => {
@@ -297,7 +297,7 @@ export default function App() {
   // --- 3. 統合計算エンジン ---
   const calc = useMemo(() => {
     // 安全な参照
-    const baseObj = PRICE_TABLE[data.category] || PRICE_TABLE.E;
+    const baseObj = (PRICE_TABLE as any)[data.category] || PRICE_TABLE.E;
     // 価格ロジックの修正: Premium=max, Standard=mid, Economy=min
     let basePrice = tier === 'premium' ? baseObj.max 
                     : tier === 'standard' ? baseObj.mid 
