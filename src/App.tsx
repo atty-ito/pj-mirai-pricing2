@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * Archive OS v24.1 (SSOT-driven)
@@ -608,7 +608,11 @@ function buildVariableLineItems(data: Data, workItems: WorkItem[]) {
   for (const w of workItems) {
     const base = baseUnitByTier(w.service, data.tier);
     const sizeAdder = SIZE_ADDERS[w.sizeClass] ?? 0;
-    const fmtAdder = (w.fileFormats || []).reduce((sum, f) => sum + (FORMAT_ADDERS as any)[f] ?? 0, 0);
+    // NOTE: `??` は `+` より優先順位が低い（`sum + x ?? 0` は `(sum + x) ?? 0` と解釈される）ため、括弧で意図を明確化する。
+    const fmtAdder = (w.fileFormats || []).reduce(
+      (sum, f) => sum + (((FORMAT_ADDERS as any)[f] as number | undefined) ?? 0),
+      0
+    );
 
     const c = factorC(w);
     const q = factorQ(w, data);
