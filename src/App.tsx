@@ -208,8 +208,7 @@ function deriveSpecFlags(d: Data) {
     d.specProfile === "gunma" ? d.gunmaMediaRequirements : d.specProfile === "ndl";
   const requireMetadata =
     d.specProfile === "gunma" ? d.gunmaMetadataMandatory : d.specProfile === "ndl";
-  const fullInspection =
-    d.specProfile === "gunma" ? d.gunmaAllInspection : d.inspectionLevel === "all";
+  const fullInspection = d.specProfile === "gunma" ? d.gunmaAllInspection : (d.inspectionLevel === "full" || d.inspectionLevel === "double_full");
   return { requireMedia, requireMetadata, fullInspection };
 }
 
@@ -1332,7 +1331,7 @@ export default function App() {
   <TextAreaField
     label="備考（案件個別）"
     value={w.notes ?? ""}
-    onChange={(v) => setWorkItem(w.id, { notes: v })}
+    onChange={(v) => updateWorkItem(w.id, { notes: v })}
     placeholder="例：禁裁断、欠損あり、ページ順の注意等"
     rows={3}
   />
