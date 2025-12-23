@@ -58,6 +58,8 @@ type Data = {
   includeQuotation: boolean;
   includeInternalCalc: boolean;
   includeSpecDoc: boolean;
+  includeInstructionDoc: boolean;
+  includeInspectionDoc: boolean;
 
   // 仕様スイッチ
   specProfile: SpecProfile; // standard / ndl / gunma
@@ -745,6 +747,34 @@ function Page(props: { title: string; children: React.ReactNode }) {
 
 // ---- メイン ----
 
+
+type ViewKey = "input" | "instruction" | "estimate" | "spec" | "inspection";
+
+const VIEW_ITEMS: Array<{ key: ViewKey; label: string; hint: string }> = [
+  { key: "input", label: "入力画面", hint: "案件条件・単価・スイッチ" },
+  { key: "instruction", label: "指示書", hint: "内部用 作業指示書" },
+  { key: "estimate", label: "見積もり", hint: "顧客提出用 見積書" },
+  { key: "spec", label: "仕様", hint: "仕様書（標準に連動）" },
+  { key: "inspection", label: "検査", hint: "検査表（全数/抜取など）" },
+];
+
+function NavButton(props: { active: boolean; label: string; hint: string; onClick: () => void }) {
+  const { active, label, hint, onClick } = props;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "w-full rounded-xl border px-3 py-2 text-left transition",
+        active ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
+      ].join(" ")}
+    >
+      <div className="text-sm font-semibold">{label}</div>
+      <div className={["mt-0.5 text-xs", active ? "text-slate-200" : "text-slate-500"].join(" ")}>{hint}</div>
+    </button>
+  );
+}
+
 export default function App() {
   const [data, setData] = useState<Data>(() => ({
     clientName: "（顧客名）",
@@ -757,6 +787,8 @@ export default function App() {
     includeQuotation: true,
     includeInternalCalc: true,
     includeSpecDoc: true,
+      includeInstructionDoc: true,
+      includeInspectionDoc: true,
 
     specProfile: "ndl",
     gunmaAllInspection: true,
@@ -796,6 +828,8 @@ export default function App() {
 
     taxRate: 0.1,
   }));
+  const [view, setView] = useState<ViewKey>("input");
+
 
   const calc = useMemo(() => computeCalc(data), [data]);
 
@@ -850,538 +884,720 @@ export default function App() {
 
   // ---- 画面 ----
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
-      <div className="mx-auto max-w-6xl p-5">
-        <div className="mb-4 flex items-end justify-between">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <div className="mx-auto max-w-7xl px-4 py-6">
+        <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <div className="text-xl font-semibold">見積・仕様書 生成（v24_3）</div>
-            <div className="text-xs text-slate-600">
-              規格スイッチ（NDL／群馬）と、備品実費等の自由入力を組み込み済み。
-            </div>
+            <h1 className="text-xl font-bold tracking-tight">アーカイブ見積もりシステム</h1>
+            <p className="mt-1 text-sm text-slate-600">
+              左のタブで、入力・指示書・見積・仕様・検査を切り替えます。計算ロジックは入力タブの条件に追随します。
+            </p>
           </div>
-          <div className="text-right text-xs text-slate-600">
-            出力対象：{data.includeQuotation ? "見積書 " : ""}
-            {data.includeInternalCalc ? "内部計算書 " : ""}
-            {data.includeSpecDoc ? "仕様書" : ""}
+          <div className="text-right text-xs text-slate-500">
+            <div className="font-semibold text-slate-700">v24_5</div>
+            <div className="mt-0.5">{VIEW_ITEMS.find((x) => x.key === view)?.label}</div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* 入力 */}
-          <div className="space-y-4">
-            <Card title="1) 基本情報">
-              <div className="grid grid-cols-2 gap-3">
-                <TextField label="顧客名" value={data.clientName} onChange={(v) => setData((p) => ({ ...p, clientName: v }))} />
-                <TextField label="案件名" value={data.projectName} onChange={(v) => setData((p) => ({ ...p, projectName: v }))} />
-                <TextField label="担当者名" value={data.contactName} onChange={(v) => setData((p) => ({ ...p, contactName: v }))} />
-                <TextField label="発行日" value={data.issueDate} onChange={(v) => setData((p) => ({ ...p, issueDate: v }))} />
-              </div>
-            </Card>
+        <div className="flex gap-4">
+          <aside className="w-56 shrink-0">
+            <div className="sticky top-4 space-y-2">
+              {VIEW_ITEMS.map((it) => (
+                <NavButton
+                  key={it.key}
+                  active={view === it.key}
+                  label={it.label}
+                  hint={it.hint}
+                  onClick={() => setView(it.key)}
+                />
+              ))}
 
-            <Card title="2) プランと検査">
-              <div className="grid grid-cols-2 gap-3">
-                <SelectField<Tier>
-                  label="プラン"
-                  value={data.tier}
-                  onChange={(v) => setData((p) => ({ ...p, tier: v }))}
-                  options={[
-                    { value: "economy", label: "エコノミー（価格優先）" },
-                    { value: "standard", label: "スタンダード（バランス）" },
-                    { value: "premium", label: "プレミアム（品質・管理優先）" },
-                  ]}
-                  hint="単価は「基礎単価＋加算要素」を基に算出します。"
-                />
-                <SelectField<InspectionLevel>
-                  label="検査レベル"
-                  value={data.inspectionLevel}
-                  onChange={(v) => setData((p) => ({ ...p, inspectionLevel: v }))}
-                  options={[
-                    { value: "none", label: "検査なし" },
-                    { value: "sample", label: "抜取検査" },
-                    { value: "full", label: "全数検査" },
-                    { value: "double_full", label: "二重・全数検査" },
-                  ]}
-                  hint="検査レベルは単価に倍率として反映されます。"
-                />
-              </div>
-
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <Checkbox
-                  label="単価内訳（行ごと）を表示"
-                  checked={data.showUnitPriceBreakdown}
-                  onChange={(v) => setData((p) => ({ ...p, showUnitPriceBreakdown: v }))}
-                  hint="入力と同時に、参考単価と内訳を確認できます。"
-                />
-                <div className="rounded-lg border bg-white px-3 py-2">
-                  <div className="text-xs text-slate-600">参考：基礎単価（{tierLabel(data.tier)}）</div>
-                  <div className="text-sm font-semibold tabular-nums">{fmtJPY(TIER_BASE_PER_UNIT[data.tier])} / 頁</div>
-                  <div className="text-xs text-slate-500">※ 実際の単価は加算・検査倍率を含みます。</div>
+              <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-700">
+                <div className="font-semibold">現在の前提</div>
+                <div className="mt-1 space-y-1 text-slate-600">
+                  <div>
+                    標準: <span className="font-medium text-slate-800">{standardLabel(data.standard)}</span>
+                  </div>
+                  <div>
+                    プラン: <span className="font-medium text-slate-800">{tierLabel(data.tier)}</span>
+                  </div>
+                  <div>
+                    検査: <span className="font-medium text-slate-800">{inspectionLabel(data.inspectionLevel)}</span>
+                  </div>
                 </div>
               </div>
-            </Card>
+            </div>
+          </aside>
 
-            <Card title="3) 仕様書の規格スイッチ（NDL／群馬）">
-              <div className="grid grid-cols-2 gap-3">
-                <SelectField<SpecProfile>
-                  label="仕様プロファイル"
-                  value={data.specProfile}
-                  onChange={(v) =>
-                    setData((p) => ({
-                      ...p,
-                      specProfile: v,
-                      // 群馬に寄せた場合は、実務的に全数寄りになるため、検査レベルも補助的に引き上げる（ただし強制はしない）
-                      inspectionLevel: v === "gunma" && p.inspectionLevel === "none" ? "sample" : p.inspectionLevel,
-                    }))
-                  }
-                  options={[
-                    { value: "standard", label: "標準（簡易）" },
-                    { value: "ndl", label: "NDL準拠（詳細）" },
-                    { value: "gunma", label: "群馬仕様（厳格）" },
-                  ]}
-                  hint="選択に応じて、仕様書の粒度（詳細度）が連動して変化します。"
-                />
-                <div className="rounded-lg border bg-white px-3 py-2">
-                  <div className="text-xs text-slate-600">現在のプロファイル</div>
-                  <div className="text-sm font-semibold">{specProfileLabel(data.specProfile)}</div>
-                  <div className="text-xs text-slate-500">※ 出力される仕様書本文が変化します。</div>
-                </div>
-              </div>
-
-              {data.specProfile === "gunma" ? (
-                <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <Checkbox
-                    label="全数検査（群馬）"
-                    checked={data.gunmaAllInspection}
-                    onChange={(v) => setData((p) => ({ ...p, gunmaAllInspection: v }))}
-                    hint="工程・出荷前を含め、全数を原則化。"
-                  />
-                  <Checkbox
-                    label="媒体要件（群馬）"
-                    checked={data.gunmaMediaRequirements}
-                    onChange={(v) => setData((p) => ({ ...p, gunmaMediaRequirements: v }))}
-                    hint="媒体、チェックサム、命名規則等の規格化。"
-                  />
-                  <Checkbox
-                    label="メタデータ必須項目（群馬）"
-                    checked={data.gunmaMetadataMandatory}
-                    onChange={(v) => setData((p) => ({ ...p, gunmaMetadataMandatory: v }))}
-                    hint="必須欠落を不合格扱いとする運用。"
-                  />
-                </div>
-              ) : (
-                <div className="mt-3 text-xs text-slate-600">
-                  群馬仕様を選択した場合のみ、「全数検査／媒体要件／メタデータ必須項目」を入力UI上のスイッチとして表示します。
-                </div>
-              )}
-            </Card>
-
-            <Card title="4) 付帯・出力設定">
-              <div className="grid grid-cols-2 gap-3">
-                <Checkbox
-                  label="顧客提出用：見積書を出力"
-                  checked={data.includeQuotation}
-                  onChange={(v) => setData((p) => ({ ...p, includeQuotation: v }))}
-                />
-                <Checkbox
-                  label="内部用：計算書を出力"
-                  checked={data.includeInternalCalc}
-                  onChange={(v) => setData((p) => ({ ...p, includeInternalCalc: v }))}
-                />
-                <Checkbox
-                  label="仕様書を出力"
-                  checked={data.includeSpecDoc}
-                  onChange={(v) => setData((p) => ({ ...p, includeSpecDoc: v }))}
-                />
-                <Checkbox
-                  label="内部用：プラン差分説明ページを必ず出力"
-                  checked={data.includeInternalPlanDiffPage}
-                  onChange={(v) => setData((p) => ({ ...p, includeInternalPlanDiffPage: v }))}
-                  hint="顧客提出用には含めない前提（内部用）。"
-                />
-              </div>
-
-              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                <Checkbox
-                  label="燻蒸（防カビ・防虫）"
-                  checked={data.includeFumigation}
-                  onChange={(v) => setData((p) => ({ ...p, includeFumigation: v }))}
-                />
-                <Checkbox
-                  label="長期保存資材への格納"
-                  checked={data.includePacking}
-                  onChange={(v) => setData((p) => ({ ...p, includePacking: v }))}
-                />
-                <Checkbox
-                  label="集荷・納品"
-                  checked={data.includePickupDelivery}
-                  onChange={(v) => setData((p) => ({ ...p, includePickupDelivery: v }))}
-                />
-                <Checkbox
-                  label="現地作業"
-                  checked={data.includeOnsite}
-                  onChange={(v) => setData((p) => ({ ...p, includeOnsite: v }))}
-                />
-                <Checkbox
-                  label="暗号化・アクセス制御"
-                  checked={data.includeEncryption}
-                  onChange={(v) => setData((p) => ({ ...p, includeEncryption: v }))}
-                />
-                <NumberField
-                  label="税率"
-                  value={Math.round(data.taxRate * 100)}
-                  onChange={(v) => setData((p) => ({ ...p, taxRate: Math.max(0, Math.min(100, v)) / 100 }))}
-                  suffix="%"
-                />
-              </div>
-            </Card>
-
-            <Card
-              title="5) 対象資料（行ごとに単価が変わる）"
-              right={<TinyButton label="＋行を追加" onClick={addWorkItem} kind="primary" />}
-            >
+          <main className="min-w-0 flex-1">
+            {view === "input" ? (
               <div className="space-y-4">
-                {data.workItems.map((w, idx) => {
-                  const bd = calc.unitBreakdowns[w.id] ?? computeUnitPrice(data.tier, data.inspectionLevel, w);
-                  return (
-                    <div key={w.id} className="rounded-2xl border bg-white p-3">
-                      <div className="mb-2 flex items-center justify-between">
-                        <div className="text-sm font-semibold text-slate-800">行 {idx + 1}</div>
-                        <TinyButton label="削除" onClick={() => removeWorkItem(w.id)} kind="danger" />
-                      </div>
+                          <Card title="1) 基本情報">
+                            <div className="grid grid-cols-2 gap-3">
+                              <TextField label="顧客名" value={data.clientName} onChange={(v) => setData((p) => ({ ...p, clientName: v }))} />
+                              <TextField label="案件名" value={data.projectName} onChange={(v) => setData((p) => ({ ...p, projectName: v }))} />
+                              <TextField label="担当者名" value={data.contactName} onChange={(v) => setData((p) => ({ ...p, contactName: v }))} />
+                              <TextField label="発行日" value={data.issueDate} onChange={(v) => setData((p) => ({ ...p, issueDate: v }))} />
+                            </div>
+                          </Card>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <TextField
-                          label="項目名"
-                          value={w.title}
-                          onChange={(v) => updateWorkItem(w.id, { title: v })}
-                          placeholder="例：古文書／図面／帳票 など"
-                        />
-                        <div className="grid grid-cols-3 gap-2">
-                          <NumberField
-                            label="数量"
-                            value={w.qty}
-                            onChange={(v) => updateWorkItem(w.id, { qty: v })}
-                            min={0}
-                          />
-                          <SelectField<WorkItem["unit"]>
-                            label="単位"
-                            value={w.unit}
-                            onChange={(v) => updateWorkItem(w.id, { unit: v })}
-                            options={[
-                              { value: "頁", label: "頁" },
-                              { value: "点", label: "点" },
-                              { value: "巻", label: "巻" },
-                            ]}
-                          />
-                          <div className="rounded-lg border bg-slate-50 px-3 py-2">
-                            <div className="text-xs text-slate-600">参考単価</div>
-                            <div className="text-sm font-semibold tabular-nums">{fmtJPY(bd.finalUnitPrice)} / {w.unit}</div>
-                            <div className="text-xs text-slate-500">（検査倍率込）</div>
-                          </div>
-                        </div>
+                          <Card title="2) プランと検査">
+                            <div className="grid grid-cols-2 gap-3">
+                              <SelectField<Tier>
+                                label="プラン"
+                                value={data.tier}
+                                onChange={(v) => setData((p) => ({ ...p, tier: v }))}
+                                options={[
+                                  { value: "economy", label: "エコノミー（価格優先）" },
+                                  { value: "standard", label: "スタンダード（バランス）" },
+                                  { value: "premium", label: "プレミアム（品質・管理優先）" },
+                                ]}
+                                hint="単価は「基礎単価＋加算要素」を基に算出します。"
+                              />
+                              <SelectField<InspectionLevel>
+                                label="検査レベル"
+                                value={data.inspectionLevel}
+                                onChange={(v) => setData((p) => ({ ...p, inspectionLevel: v }))}
+                                options={[
+                                  { value: "none", label: "検査なし" },
+                                  { value: "sample", label: "抜取検査" },
+                                  { value: "full", label: "全数検査" },
+                                  { value: "double_full", label: "二重・全数検査" },
+                                ]}
+                                hint="検査レベルは単価に倍率として反映されます。"
+                              />
+                            </div>
 
-                        <SelectField<SizeClass>
-                          label="サイズ区分"
-                          value={w.sizeClass}
-                          onChange={(v) => updateWorkItem(w.id, { sizeClass: v })}
-                          options={[
-                            { value: "A4以下", label: "A4以下" },
-                            { value: "A3", label: "A3" },
-                            { value: "A2", label: "A2" },
-                            { value: "A1", label: "A1" },
-                            { value: "A0", label: "A0" },
-                            { value: "図面特大", label: "図面特大" },
-                          ]}
-                        />
-                        <SelectField<ColorMode>
-                          label="色"
-                          value={w.colorMode}
-                          onChange={(v) => updateWorkItem(w.id, { colorMode: v })}
-                          options={[
-                            { value: "mono", label: "白黒" },
-                            { value: "gray", label: "グレー" },
-                            { value: "color", label: "カラー" },
-                          ]}
-                        />
+                            <div className="mt-3 grid grid-cols-2 gap-3">
+                              <Checkbox
+                                label="単価内訳（行ごと）を表示"
+                                checked={data.showUnitPriceBreakdown}
+                                onChange={(v) => setData((p) => ({ ...p, showUnitPriceBreakdown: v }))}
+                                hint="入力と同時に、参考単価と内訳を確認できます。"
+                              />
+                              <div className="rounded-lg border bg-white px-3 py-2">
+                                <div className="text-xs text-slate-600">参考：基礎単価（{tierLabel(data.tier)}）</div>
+                                <div className="text-sm font-semibold tabular-nums">{fmtJPY(TIER_BASE_PER_UNIT[data.tier])} / 頁</div>
+                                <div className="text-xs text-slate-500">※ 実際の単価は加算・検査倍率を含みます。</div>
+                              </div>
+                            </div>
+                          </Card>
 
-                        <SelectField<Dpi>
-                          label="解像度（dpi）"
-                          value={w.dpi}
-                          onChange={(v) => updateWorkItem(w.id, { dpi: v })}
-                          options={[
-                            { value: 300, label: "300" },
-                            { value: 400, label: "400" },
-                            { value: 600, label: "600" },
-                          ]}
-                        />
-                        <SelectField<Handling>
-                          label="取扱区分"
-                          value={w.handling}
-                          onChange={(v) => updateWorkItem(w.id, { handling: v })}
-                          options={[
-                            { value: "normal", label: "通常" },
-                            { value: "fragile", label: "脆弱・破損懸念" },
-                            { value: "bound", label: "製本（裁断不可等）" },
-                            { value: "mylars", label: "マイラー図面等" },
-                            { value: "mixed", label: "混在（個別判断）" },
-                          ]}
-                        />
+                          <Card title="3) 仕様書の規格スイッチ（NDL／群馬）">
+                            <div className="grid grid-cols-2 gap-3">
+                              <SelectField<SpecProfile>
+                                label="仕様プロファイル"
+                                value={data.specProfile}
+                                onChange={(v) =>
+                                  setData((p) => ({
+                                    ...p,
+                                    specProfile: v,
+                                    // 群馬に寄せた場合は、実務的に全数寄りになるため、検査レベルも補助的に引き上げる（ただし強制はしない）
+                                    inspectionLevel: v === "gunma" && p.inspectionLevel === "none" ? "sample" : p.inspectionLevel,
+                                  }))
+                                }
+                                options={[
+                                  { value: "standard", label: "標準（簡易）" },
+                                  { value: "ndl", label: "NDL準拠（詳細）" },
+                                  { value: "gunma", label: "群馬仕様（厳格）" },
+                                ]}
+                                hint="選択に応じて、仕様書の粒度（詳細度）が連動して変化します。"
+                              />
+                              <div className="rounded-lg border bg-white px-3 py-2">
+                                <div className="text-xs text-slate-600">現在のプロファイル</div>
+                                <div className="text-sm font-semibold">{specProfileLabel(data.specProfile)}</div>
+                                <div className="text-xs text-slate-500">※ 出力される仕様書本文が変化します。</div>
+                              </div>
+                            </div>
 
-                        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div>
-                            <Label>出力形式</Label>
-                            <div className="flex flex-wrap gap-2">
-                              {(["PDF", "PDF/A", "TIFF", "JPEG", "JPEG2000", "TXT", "XML"] as FileFormat[]).map((f) => {
-                                const checked = w.formats.includes(f);
+                            {data.specProfile === "gunma" ? (
+                              <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <Checkbox
+                                  label="全数検査（群馬）"
+                                  checked={data.gunmaAllInspection}
+                                  onChange={(v) => setData((p) => ({ ...p, gunmaAllInspection: v }))}
+                                  hint="工程・出荷前を含め、全数を原則化。"
+                                />
+                                <Checkbox
+                                  label="媒体要件（群馬）"
+                                  checked={data.gunmaMediaRequirements}
+                                  onChange={(v) => setData((p) => ({ ...p, gunmaMediaRequirements: v }))}
+                                  hint="媒体、チェックサム、命名規則等の規格化。"
+                                />
+                                <Checkbox
+                                  label="メタデータ必須項目（群馬）"
+                                  checked={data.gunmaMetadataMandatory}
+                                  onChange={(v) => setData((p) => ({ ...p, gunmaMetadataMandatory: v }))}
+                                  hint="必須欠落を不合格扱いとする運用。"
+                                />
+                              </div>
+                            ) : (
+                              <div className="mt-3 text-xs text-slate-600">
+                                群馬仕様を選択した場合のみ、「全数検査／媒体要件／メタデータ必須項目」を入力UI上のスイッチとして表示します。
+                              </div>
+                            )}
+                          </Card>
+
+                          <Card title="4) 付帯・出力設定">
+                            <div className="grid grid-cols-2 gap-3">
+                              <Checkbox
+                                label="顧客提出用：見積書を出力"
+                                checked={data.includeQuotation}
+                                onChange={(v) => setData((p) => ({ ...p, includeQuotation: v }))}
+                              />
+                              <Checkbox
+                                label="内部用：計算書を出力"
+                                checked={data.includeInternalCalc}
+                                onChange={(v) => setData((p) => ({ ...p, includeInternalCalc: v }))}
+                              />
+                              <Checkbox
+                                label="仕様書を出力"
+                                checked={data.includeSpecDoc}
+                                onChange={(v) => setData((p) => ({ ...p, includeSpecDoc: v }))}
+                              />
+                              <Checkbox
+                                label="内部用：作業指示書を出力"
+                                checked={data.includeInstructionDoc}
+                                onChange={(v) => setData((p) => ({ ...p, includeInstructionDoc: v }))}
+                              />
+                              <Checkbox
+                                label="内部用：検査表を出力"
+                                checked={data.includeInspectionDoc}
+                                onChange={(v) => setData((p) => ({ ...p, includeInspectionDoc: v }))}
+                              />
+                              <Checkbox
+                                label="内部用：プラン差分説明ページを必ず出力"
+                                checked={data.includeInternalPlanDiffPage}
+                                onChange={(v) => setData((p) => ({ ...p, includeInternalPlanDiffPage: v }))}
+                                hint="顧客提出用には含めない前提（内部用）。"
+                              />
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <Checkbox
+                                label="燻蒸（防カビ・防虫）"
+                                checked={data.includeFumigation}
+                                onChange={(v) => setData((p) => ({ ...p, includeFumigation: v }))}
+                              />
+                              <Checkbox
+                                label="長期保存資材への格納"
+                                checked={data.includePacking}
+                                onChange={(v) => setData((p) => ({ ...p, includePacking: v }))}
+                              />
+                              <Checkbox
+                                label="集荷・納品"
+                                checked={data.includePickupDelivery}
+                                onChange={(v) => setData((p) => ({ ...p, includePickupDelivery: v }))}
+                              />
+                              <Checkbox
+                                label="現地作業"
+                                checked={data.includeOnsite}
+                                onChange={(v) => setData((p) => ({ ...p, includeOnsite: v }))}
+                              />
+                              <Checkbox
+                                label="暗号化・アクセス制御"
+                                checked={data.includeEncryption}
+                                onChange={(v) => setData((p) => ({ ...p, includeEncryption: v }))}
+                              />
+                              <NumberField
+                                label="税率"
+                                value={Math.round(data.taxRate * 100)}
+                                onChange={(v) => setData((p) => ({ ...p, taxRate: Math.max(0, Math.min(100, v)) / 100 }))}
+                                suffix="%"
+                              />
+                            </div>
+                          </Card>
+
+                          <Card
+                            title="5) 対象資料（行ごとに単価が変わる）"
+                            right={<TinyButton label="＋行を追加" onClick={addWorkItem} kind="primary" />}
+                          >
+                            <div className="space-y-4">
+                              {data.workItems.map((w, idx) => {
+                                const bd = calc.unitBreakdowns[w.id] ?? computeUnitPrice(data.tier, data.inspectionLevel, w);
                                 return (
-                                  <label key={f} className="flex items-center gap-2 rounded-full border bg-white px-3 py-1 text-xs">
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={(e) => {
-                                        const next = e.target.checked
-                                          ? Array.from(new Set([...w.formats, f]))
-                                          : w.formats.filter((x) => x !== f);
-                                        updateWorkItem(w.id, { formats: next });
-                                      }}
-                                    />
-                                    <span>{f}</span>
-                                  </label>
+                                  <div key={w.id} className="rounded-2xl border bg-white p-3">
+                                    <div className="mb-2 flex items-center justify-between">
+                                      <div className="text-sm font-semibold text-slate-800">行 {idx + 1}</div>
+                                      <TinyButton label="削除" onClick={() => removeWorkItem(w.id)} kind="danger" />
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                      <TextField
+                                        label="項目名"
+                                        value={w.title}
+                                        onChange={(v) => updateWorkItem(w.id, { title: v })}
+                                        placeholder="例：古文書／図面／帳票 など"
+                                      />
+                                      <div className="grid grid-cols-3 gap-2">
+                                        <NumberField
+                                          label="数量"
+                                          value={w.qty}
+                                          onChange={(v) => updateWorkItem(w.id, { qty: v })}
+                                          min={0}
+                                        />
+                                        <SelectField<WorkItem["unit"]>
+                                          label="単位"
+                                          value={w.unit}
+                                          onChange={(v) => updateWorkItem(w.id, { unit: v })}
+                                          options={[
+                                            { value: "頁", label: "頁" },
+                                            { value: "点", label: "点" },
+                                            { value: "巻", label: "巻" },
+                                          ]}
+                                        />
+                                        <div className="rounded-lg border bg-slate-50 px-3 py-2">
+                                          <div className="text-xs text-slate-600">参考単価</div>
+                                          <div className="text-sm font-semibold tabular-nums">{fmtJPY(bd.finalUnitPrice)} / {w.unit}</div>
+                                          <div className="text-xs text-slate-500">（検査倍率込）</div>
+                                        </div>
+                                      </div>
+
+                                      <SelectField<SizeClass>
+                                        label="サイズ区分"
+                                        value={w.sizeClass}
+                                        onChange={(v) => updateWorkItem(w.id, { sizeClass: v })}
+                                        options={[
+                                          { value: "A4以下", label: "A4以下" },
+                                          { value: "A3", label: "A3" },
+                                          { value: "A2", label: "A2" },
+                                          { value: "A1", label: "A1" },
+                                          { value: "A0", label: "A0" },
+                                          { value: "図面特大", label: "図面特大" },
+                                        ]}
+                                      />
+                                      <SelectField<ColorMode>
+                                        label="色"
+                                        value={w.colorMode}
+                                        onChange={(v) => updateWorkItem(w.id, { colorMode: v })}
+                                        options={[
+                                          { value: "mono", label: "白黒" },
+                                          { value: "gray", label: "グレー" },
+                                          { value: "color", label: "カラー" },
+                                        ]}
+                                      />
+
+                                      <SelectField<Dpi>
+                                        label="解像度（dpi）"
+                                        value={w.dpi}
+                                        onChange={(v) => updateWorkItem(w.id, { dpi: v })}
+                                        options={[
+                                          { value: 300, label: "300" },
+                                          { value: 400, label: "400" },
+                                          { value: 600, label: "600" },
+                                        ]}
+                                      />
+                                      <SelectField<Handling>
+                                        label="取扱区分"
+                                        value={w.handling}
+                                        onChange={(v) => updateWorkItem(w.id, { handling: v })}
+                                        options={[
+                                          { value: "normal", label: "通常" },
+                                          { value: "fragile", label: "脆弱・破損懸念" },
+                                          { value: "bound", label: "製本（裁断不可等）" },
+                                          { value: "mylars", label: "マイラー図面等" },
+                                          { value: "mixed", label: "混在（個別判断）" },
+                                        ]}
+                                      />
+
+                                      <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div>
+                                          <Label>出力形式</Label>
+                                          <div className="flex flex-wrap gap-2">
+                                            {(["PDF", "PDF/A", "TIFF", "JPEG", "JPEG2000", "TXT", "XML"] as FileFormat[]).map((f) => {
+                                              const checked = w.formats.includes(f);
+                                              return (
+                                                <label key={f} className="flex items-center gap-2 rounded-full border bg-white px-3 py-1 text-xs">
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={checked}
+                                                    onChange={(e) => {
+                                                      const next = e.target.checked
+                                                        ? Array.from(new Set([...w.formats, f]))
+                                                        : w.formats.filter((x) => x !== f);
+                                                      updateWorkItem(w.id, { formats: next });
+                                                    }}
+                                                  />
+                                                  <span>{f}</span>
+                                                </label>
+                                              );
+                                            })}
+                                          </div>
+                                          <div className="mt-1 text-xs text-slate-500">※ 形式は複数選択可能。形式ごとに加算されます。</div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 gap-3">
+                                          <Checkbox
+                                            label="OCR（文字認識）"
+                                            checked={w.ocr}
+                                            onChange={(v) => updateWorkItem(w.id, { ocr: v })}
+                                            hint="OCRの有無で単価に加算が入ります。"
+                                          />
+                                          <SelectField<MetadataLevel>
+                                            label="メタデータ"
+                                            value={w.metadataLevel}
+                                            onChange={(v) => updateWorkItem(w.id, { metadataLevel: v })}
+                                            options={[
+                                              { value: "none", label: "なし" },
+                                              { value: "basic", label: "基本" },
+                                              { value: "rich", label: "充実" },
+                                            ]}
+                                            hint="NDL／群馬仕様の場合、仕様書側で項目群が詳細化されます。"
+                                          />
+                                        </div>
+                                      </div>
+
+                                      <div className="md:col-span-2">
+                                        <TextField label="備考" value={w.notes} onChange={(v) => updateWorkItem(w.id, { notes: v })} placeholder="例：禁裁断、欠損あり、ページ順の注意等" />
+                                      </div>
+
+                                      {data.showUnitPriceBreakdown ? (
+                                        <div className="md:col-span-2 rounded-xl border bg-slate-50 p-3">
+                                          <div className="text-xs font-semibold text-slate-700 mb-2">参考単価 内訳（税抜・概算）</div>
+                                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                                            <div>基礎：{fmtJPY(bd.base)}</div>
+                                            <div>サイズ：{fmtJPY(bd.size)}</div>
+                                            <div>色：{fmtJPY(bd.color)}</div>
+                                            <div>dpi：{fmtJPY(bd.dpi)}</div>
+                                            <div>形式：{fmtJPY(bd.formats)}</div>
+                                            <div>OCR：{fmtJPY(bd.ocr)}</div>
+                                            <div>メタデータ：{fmtJPY(bd.metadata)}</div>
+                                            <div>取扱：{fmtJPY(bd.handling)}</div>
+                                            <div className="md:col-span-2">小計：{fmtJPY(bd.subtotal)} / {w.unit}</div>
+                                            <div className="md:col-span-2">検査倍率：×{bd.inspectionMultiplier.toFixed(2)} → {fmtJPY(bd.finalUnitPrice)} / {w.unit}</div>
+                                          </div>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  </div>
                                 );
                               })}
                             </div>
-                            <div className="mt-1 text-xs text-slate-500">※ 形式は複数選択可能。形式ごとに加算されます。</div>
-                          </div>
+                          </Card>
 
-                          <div className="grid grid-cols-1 gap-3">
-                            <Checkbox
-                              label="OCR（文字認識）"
-                              checked={w.ocr}
-                              onChange={(v) => updateWorkItem(w.id, { ocr: v })}
-                              hint="OCRの有無で単価に加算が入ります。"
-                            />
-                            <SelectField<MetadataLevel>
-                              label="メタデータ"
-                              value={w.metadataLevel}
-                              onChange={(v) => updateWorkItem(w.id, { metadataLevel: v })}
-                              options={[
-                                { value: "none", label: "なし" },
-                                { value: "basic", label: "基本" },
-                                { value: "rich", label: "充実" },
-                              ]}
-                              hint="NDL／群馬仕様の場合、仕様書側で項目群が詳細化されます。"
-                            />
-                          </div>
-                        </div>
+                          <Card
+                            title="6) 備品実費等（自由入力：品目＋金額 → 見積反映）"
+                            right={<TinyButton label="＋追加" onClick={addMiscExpense} kind="primary" />}
+                          >
+                            {data.miscExpenses.length === 0 ? (
+                              <div className="text-sm text-slate-600">
+                                追加がない場合は空のままでよい。未知の備品・資材等の実費が出た際に、ここへ「文字列＋金額」を追加し、そのまま見積書へ反映します。
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                {data.miscExpenses.map((m) => (
+                                  <div key={m.id} className="rounded-xl border bg-white p-3">
+                                    <div className="mb-2 flex items-center justify-between">
+                                      <div className="text-sm font-semibold text-slate-800">備品実費等</div>
+                                      <TinyButton label="削除" onClick={() => removeMiscExpense(m.id)} kind="danger" />
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                      <TextField label="品目（自由入力）" value={m.label} onChange={(v) => updateMiscExpense(m.id, { label: v })} />
+                                      <NumberField label="金額（税抜）" value={m.amount} onChange={(v) => updateMiscExpense(m.id, { amount: v })} suffix="円" />
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </Card>
 
-                        <div className="md:col-span-2">
-                          <TextField label="備考" value={w.notes} onChange={(v) => updateWorkItem(w.id, { notes: v })} placeholder="例：禁裁断、欠損あり、ページ順の注意等" />
-                        </div>
-
-                        {data.showUnitPriceBreakdown ? (
-                          <div className="md:col-span-2 rounded-xl border bg-slate-50 p-3">
-                            <div className="text-xs font-semibold text-slate-700 mb-2">参考単価 内訳（税抜・概算）</div>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                              <div>基礎：{fmtJPY(bd.base)}</div>
-                              <div>サイズ：{fmtJPY(bd.size)}</div>
-                              <div>色：{fmtJPY(bd.color)}</div>
-                              <div>dpi：{fmtJPY(bd.dpi)}</div>
-                              <div>形式：{fmtJPY(bd.formats)}</div>
-                              <div>OCR：{fmtJPY(bd.ocr)}</div>
-                              <div>メタデータ：{fmtJPY(bd.metadata)}</div>
-                              <div>取扱：{fmtJPY(bd.handling)}</div>
-                              <div className="md:col-span-2">小計：{fmtJPY(bd.subtotal)} / {w.unit}</div>
-                              <div className="md:col-span-2">検査倍率：×{bd.inspectionMultiplier.toFixed(2)} → {fmtJPY(bd.finalUnitPrice)} / {w.unit}</div>
+                          <Card title="7) 概算合計（税抜・税込）">
+                            <div className="grid grid-cols-3 gap-3">
+                              <div className="rounded-xl border bg-white p-3">
+                                <div className="text-xs text-slate-600">小計（税抜）</div>
+                                <div className="text-lg font-semibold tabular-nums">{fmtJPY(calc.subtotal)}</div>
+                              </div>
+                              <div className="rounded-xl border bg-white p-3">
+                                <div className="text-xs text-slate-600">消費税</div>
+                                <div className="text-lg font-semibold tabular-nums">{fmtJPY(calc.tax)}</div>
+                              </div>
+                              <div className="rounded-xl border bg-slate-900 p-3 text-white">
+                                <div className="text-xs opacity-80">合計（税込）</div>
+                                <div className="text-lg font-semibold tabular-nums">{fmtJPY(calc.total)}</div>
+                              </div>
                             </div>
+                            <div className="mt-2 text-xs text-slate-600">
+                              ※ これは概算であり、現物確認・数量確定・要件確定後に精算されます。特に「単価設定」は実務上の最大のレバーであり、ここは運用しながら調整してください。
+                            </div>
+                          </Card>
+                        </div>
+            ) : null}
+
+            {view === "instruction" ? (
+              <div className="space-y-4">
+                {data.includeInstructionDoc ? (
+                  <Page title="作業指示書（内部用）">
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="text-xs font-semibold text-slate-700">案件</div>
+                          <div className="mt-1 text-sm text-slate-900">
+                            <div>顧客名: {data.clientName || "（未入力）"}</div>
+                            <div className="mt-0.5">案件名: {data.projectName || "（未入力）"}</div>
+                            <div className="mt-0.5">納期目安: {data.dueDate || "（未入力）"}</div>
                           </div>
-                        ) : null}
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="text-xs font-semibold text-slate-700">作業要件スイッチ</div>
+                          <div className="mt-1 space-y-0.5 text-sm text-slate-900">
+                            <div>標準: {standardLabel(data.standard)}</div>
+                            <div>媒体要件: {data.requireMedia ? "必須" : "任意"}</div>
+                            <div>メタデータ: {data.requireMetadata ? "必須" : "任意"}</div>
+                            <div>検査: {data.fullInspection ? "全数検査" : inspectionLabel(data.inspectionLevel)}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="text-xs font-semibold text-slate-700">作業範囲（チェックした項目）</div>
+                        <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                          {Object.entries(data.workItems).map(([k, v]) => (
+                            <div key={k} className="flex items-center gap-2 text-sm">
+                              <span
+                                className={[
+                                  "inline-flex h-5 w-5 items-center justify-center rounded-md border",
+                                  v ? "border-emerald-400 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white text-slate-400",
+                                ].join(" ")}
+                              >
+                                {v ? "✓" : "—"}
+                              </span>
+                              <span className="text-slate-900">{WORK_ITEM_LABELS[k as WorkItemKey]}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="text-xs font-semibold text-slate-700">備品・実費（自由入力）</div>
+                        <div className="mt-2">
+                          {data.miscExpenses.length === 0 ? (
+                            <div className="text-sm text-slate-500">登録なし</div>
+                          ) : (
+                            <div className="space-y-1">
+                              {data.miscExpenses.map((m) => (
+                                <div key={m.id} className="flex items-baseline justify-between gap-3 text-sm">
+                                  <div className="text-slate-800">{m.label || "（名称未入力）"}</div>
+                                  <div className="font-mono text-slate-900">{fmtJPY(m.amount)}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="text-xs font-semibold text-slate-700">備考</div>
+                        <div className="mt-2 whitespace-pre-wrap text-sm text-slate-900">{data.notes || "（未入力）"}</div>
                       </div>
                     </div>
-                  );
-                })}
+                  </Page>
+                ) : (
+                  <Card title="指示書（出力OFF）">
+                    <div className="text-sm text-slate-700">入力画面の「出力対象」で「指示書」をONにすると、このタブに指示書が生成されます。</div>
+                  </Card>
+                )}
               </div>
-            </Card>
+            ) : null}
 
-            <Card
-              title="6) 備品実費等（自由入力：品目＋金額 → 見積反映）"
-              right={<TinyButton label="＋追加" onClick={addMiscExpense} kind="primary" />}
-            >
-              {data.miscExpenses.length === 0 ? (
-                <div className="text-sm text-slate-600">
-                  追加がない場合は空のままでよい。未知の備品・資材等の実費が出た際に、ここへ「文字列＋金額」を追加し、そのまま見積書へ反映します。
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {data.miscExpenses.map((m) => (
-                    <div key={m.id} className="rounded-xl border bg-white p-3">
-                      <div className="mb-2 flex items-center justify-between">
-                        <div className="text-sm font-semibold text-slate-800">備品実費等</div>
-                        <TinyButton label="削除" onClick={() => removeMiscExpense(m.id)} kind="danger" />
+            {view === "estimate" ? (
+              <div className="space-y-4">
+                            {data.includeQuotation ? (
+                              <Page title="顧客提出用：見積書（ドラフト）">
+                                <div className="mb-3">
+                                  <div className="text-sm font-semibold">{data.projectName}</div>
+                                  <div className="text-xs text-slate-600">顧客：{data.clientName}　／　担当：{data.contactName}　／　発行日：{data.issueDate}</div>
+                                </div>
+
+                                <div className="mb-3 rounded-lg border bg-slate-50 p-3 text-sm">
+                                  <div className="font-semibold text-slate-800 mb-1">プラン：{tierLabel(data.tier)}</div>
+                                  <div className="text-xs text-slate-600">
+                                    検査：{inspectionLabel(data.inspectionLevel)} ／ 仕様：{specProfileLabel(data.specProfile)}
+                                  </div>
+                                </div>
+
+                                <LineItemTable items={calc.lineItems} />
+
+                                <div className="mt-3 grid grid-cols-3 gap-3">
+                                  <div className="rounded-lg border bg-white p-3">
+                                    <div className="text-xs text-slate-600">小計（税抜）</div>
+                                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.subtotal)}</div>
+                                  </div>
+                                  <div className="rounded-lg border bg-white p-3">
+                                    <div className="text-xs text-slate-600">消費税</div>
+                                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.tax)}</div>
+                                  </div>
+                                  <div className="rounded-lg border bg-slate-900 p-3 text-white">
+                                    <div className="text-xs opacity-80">合計（税込）</div>
+                                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.total)}</div>
+                                  </div>
+                                </div>
+
+                                <div className="mt-3 text-xs text-slate-600 whitespace-pre-wrap">
+                                  【注記】\n
+                                  1. 本見積は概算であり、数量確定・要件確定後に増減する可能性があります。\n
+                                  2. 仕様（NDL／群馬等）の詳細は、別紙仕様書に従います。\n
+                                  3. 価格は税抜表示（消費税別途）です。
+                                </div>
+                              </Page>
+                            ) : null}
+
+                            {data.includeInternalCalc ? (
+                              <Page title="内部用：計算書（ドラフト）">
+                                <div className="mb-2 text-xs text-slate-600">
+                                  内部用のため、顧客提出用の体裁ではなく、計算の前提・内訳を残す。
+                                </div>
+
+                                <div className="rounded-lg border bg-slate-50 p-3 text-sm mb-3">
+                                  <div className="font-semibold">前提</div>
+                                  <div className="text-xs text-slate-600 whitespace-pre-wrap">
+                                    ・プラン：{tierLabel(data.tier)}（基礎単価 {fmtJPY(TIER_BASE_PER_UNIT[data.tier])}/頁）\n
+                                    ・検査：{inspectionLabel(data.inspectionLevel)}（倍率 ×{INSPECTION_MULTIPLIER[data.inspectionLevel].toFixed(2)}）\n
+                                    ・仕様プロファイル：{specProfileLabel(data.specProfile)}\n
+                                    {data.specProfile === "gunma"
+                                      ? `・群馬スイッチ：全数検査=${data.gunmaAllInspection ? "ON" : "OFF"}／媒体要件=${data.gunmaMediaRequirements ? "ON" : "OFF"}／メタデータ必須=${data.gunmaMetadataMandatory ? "ON" : "OFF"}`
+                                      : ""}
+                                  </div>
+                                </div>
+
+                                <LineItemTable items={calc.lineItems} />
+
+                                <div className="mt-3 grid grid-cols-3 gap-3">
+                                  <div className="rounded-lg border bg-white p-3">
+                                    <div className="text-xs text-slate-600">小計（税抜）</div>
+                                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.subtotal)}</div>
+                                  </div>
+                                  <div className="rounded-lg border bg-white p-3">
+                                    <div className="text-xs text-slate-600">消費税</div>
+                                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.tax)}</div>
+                                  </div>
+                                  <div className="rounded-lg border bg-slate-900 p-3 text-white">
+                                    <div className="text-xs opacity-80">合計（税込）</div>
+                                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.total)}</div>
+                                  </div>
+                                </div>
+
+                                {data.includeInternalPlanDiffPage ? (
+                                  <div className="mt-4 rounded-xl border bg-white p-4">
+                                    <div className="text-sm font-semibold mb-2">（内部用）プラン差分説明（見積書の“続くページ”相当）</div>
+                                    <div className="text-xs text-slate-700 whitespace-pre-wrap">
+                                      目的：顧客提示の前に、プランの差（何が増えて何が減るか）を言語化しておく。\n
+                                      \n
+                                      ■ エコノミー\n
+                                      ・価格優先。検査は「抜取」までを基本に、工程の深追いはしない。\n
+                                      ・仕様書は必要十分の粒度（標準～NDL準拠）を選択可能。\n
+                                      \n
+                                      ■ スタンダード\n
+                                      ・工程内の是正（撮り直し、命名ルール厳守、軽微な補正）を前提にした運用。\n
+                                      ・NDL準拠のメタデータ（項目群・整合性）を実務レベルで回す。\n
+                                      \n
+                                      ■ プレミアム\n
+                                      ・品質責任を強く負う前提。全数検査・二重検査、監査可能な情報管理、詳細ログ等を含む。\n
+                                      ・厳格仕様（群馬仕様のような「全数検査／媒体要件／メタデータ必須」をONにした案件）にも耐える。\n
+                                      \n
+                                      ※ 本システムでは、差分を「基礎単価」「加算要素」「検査倍率」「案件固定費（管理・セットアップ）」に分解して表現している。
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </Page>
+                            ) : null}
+              </div>
+            ) : null}
+
+            {view === "spec" ? (
+              <div className="space-y-4">
+                {data.includeSpecDoc ? (
+                  <Page title="仕様書（ドラフト：規格スイッチ連動）">
+                                  <div className="mb-3 rounded-lg border bg-slate-50 p-3 text-sm">
+                                    <div className="font-semibold text-slate-800">仕様プロファイル：{specProfileLabel(data.specProfile)}</div>
+                                    <div className="text-xs text-slate-600">
+                                      検査：{inspectionLabel(data.inspectionLevel)}
+                                      {data.specProfile === "gunma"
+                                        ? ` ／ 群馬スイッチ：全数検査=${data.gunmaAllInspection ? "ON" : "OFF"}・媒体要件=${data.gunmaMediaRequirements ? "ON" : "OFF"}・メタデータ必須=${data.gunmaMetadataMandatory ? "ON" : "OFF"}`
+                                        : ""}
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-4">
+                                    {specSections.map((s, idx) => (
+                                      <div key={idx} className="rounded-xl border bg-white p-3">
+                                        <div className="text-sm font-semibold text-slate-800 mb-2">{s.title}</div>
+                                        <div className="text-sm text-slate-700 whitespace-pre-wrap">{s.body}</div>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  <div className="mt-3 text-xs text-slate-600 whitespace-pre-wrap">
+                                    【注】本仕様書は、本システムの入力情報から自動生成されるドラフトである。発注仕様（RFP）に固有の要件がある場合は、該当箇所を追記・優先する。
+                                  </div>
+                                </Page>
+                ) : (
+                  <Card title="仕様書（出力OFF）">
+                    <div className="text-sm text-slate-700">入力画面の「出力対象」で「仕様書」をONにすると、このタブに仕様書が生成されます。</div>
+                  </Card>
+                )}
+              </div>
+            ) : null}
+
+            {view === "inspection" ? (
+              <div className="space-y-4">
+                {data.includeInspectionDoc ? (
+                  <Page title="検査表（内部用）">
+                    <div className="space-y-4">
+                      <div className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="text-xs font-semibold text-slate-700">検査方式</div>
+                        <div className="mt-2 space-y-1 text-sm text-slate-900">
+                          <div>標準: {standardLabel(data.standard)}</div>
+                          <div>検査: {data.fullInspection ? "全数検査" : inspectionLabel(data.inspectionLevel)}</div>
+                          <div>媒体要件: {data.requireMedia ? "必須" : "任意"}</div>
+                          <div>メタデータ: {data.requireMetadata ? "必須" : "任意"}</div>
+                        </div>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <TextField label="品目（自由入力）" value={m.label} onChange={(v) => updateMiscExpense(m.id, { label: v })} />
-                        <NumberField label="金額（税抜）" value={m.amount} onChange={(v) => updateMiscExpense(m.id, { amount: v })} suffix="円" />
+
+                      <div className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div className="text-xs font-semibold text-slate-700">検査チェックリスト（例）</div>
+                        <div className="mt-2 overflow-x-auto">
+                          <table className="min-w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-xs text-slate-500">
+                                <th className="py-2 pr-3">項目</th>
+                                <th className="py-2 pr-3">判定基準</th>
+                                <th className="py-2 pr-3">結果</th>
+                                <th className="py-2">備考</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {[
+                                ["画像欠落", "0件（全数）"],
+                                ["傾き/天地", "許容範囲内"],
+                                ["解像度/色", "指定プロファイル準拠"],
+                                ["ファイル名規則", "規則どおり"],
+                                ["メタデータ", data.requireMetadata ? "必須項目の欠落なし" : "任意（提供分のみ）"],
+                                ["媒体格納", data.requireMedia ? "媒体要件準拠" : "任意"],
+                              ].map(([item, criteria], i) => (
+                                <tr key={i} className="align-top">
+                                  <td className="py-2 pr-3 font-medium text-slate-900">{item}</td>
+                                  <td className="py-2 pr-3 text-slate-700">{criteria}</td>
+                                  <td className="py-2 pr-3 text-slate-500">□OK / □NG</td>
+                                  <td className="py-2 text-slate-500">—</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="mt-3 text-xs text-slate-500">
+                          注: 群馬仕様など「全数検査」「媒体要件」「メタデータ必須項目」が規格化されている場合は、入力UIのスイッチ（標準=群馬）で自動的に強制されます。
+                        </div>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-
-            <Card title="7) 概算合計（税抜・税込）">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-xl border bg-white p-3">
-                  <div className="text-xs text-slate-600">小計（税抜）</div>
-                  <div className="text-lg font-semibold tabular-nums">{fmtJPY(calc.subtotal)}</div>
-                </div>
-                <div className="rounded-xl border bg-white p-3">
-                  <div className="text-xs text-slate-600">消費税</div>
-                  <div className="text-lg font-semibold tabular-nums">{fmtJPY(calc.tax)}</div>
-                </div>
-                <div className="rounded-xl border bg-slate-900 p-3 text-white">
-                  <div className="text-xs opacity-80">合計（税込）</div>
-                  <div className="text-lg font-semibold tabular-nums">{fmtJPY(calc.total)}</div>
-                </div>
+                  </Page>
+                ) : (
+                  <Card title="検査表（出力OFF）">
+                    <div className="text-sm text-slate-700">入力画面の「出力対象」で「検査」をONにすると、このタブに検査表が生成されます。</div>
+                  </Card>
+                )}
               </div>
-              <div className="mt-2 text-xs text-slate-600">
-                ※ これは概算であり、現物確認・数量確定・要件確定後に精算されます。特に「単価設定」は実務上の最大のレバーであり、ここは運用しながら調整してください。
-              </div>
-            </Card>
-          </div>
-
-          {/* 出力 */}
-          <div className="space-y-4">
-            {data.includeQuotation ? (
-              <Page title="顧客提出用：見積書（ドラフト）">
-                <div className="mb-3">
-                  <div className="text-sm font-semibold">{data.projectName}</div>
-                  <div className="text-xs text-slate-600">顧客：{data.clientName}　／　担当：{data.contactName}　／　発行日：{data.issueDate}</div>
-                </div>
-
-                <div className="mb-3 rounded-lg border bg-slate-50 p-3 text-sm">
-                  <div className="font-semibold text-slate-800 mb-1">プラン：{tierLabel(data.tier)}</div>
-                  <div className="text-xs text-slate-600">
-                    検査：{inspectionLabel(data.inspectionLevel)} ／ 仕様：{specProfileLabel(data.specProfile)}
-                  </div>
-                </div>
-
-                <LineItemTable items={calc.lineItems} />
-
-                <div className="mt-3 grid grid-cols-3 gap-3">
-                  <div className="rounded-lg border bg-white p-3">
-                    <div className="text-xs text-slate-600">小計（税抜）</div>
-                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.subtotal)}</div>
-                  </div>
-                  <div className="rounded-lg border bg-white p-3">
-                    <div className="text-xs text-slate-600">消費税</div>
-                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.tax)}</div>
-                  </div>
-                  <div className="rounded-lg border bg-slate-900 p-3 text-white">
-                    <div className="text-xs opacity-80">合計（税込）</div>
-                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.total)}</div>
-                  </div>
-                </div>
-
-                <div className="mt-3 text-xs text-slate-600 whitespace-pre-wrap">
-                  【注記】\n
-                  1. 本見積は概算であり、数量確定・要件確定後に増減する可能性があります。\n
-                  2. 仕様（NDL／群馬等）の詳細は、別紙仕様書に従います。\n
-                  3. 価格は税抜表示（消費税別途）です。
-                </div>
-              </Page>
             ) : null}
-
-            {data.includeInternalCalc ? (
-              <Page title="内部用：計算書（ドラフト）">
-                <div className="mb-2 text-xs text-slate-600">
-                  内部用のため、顧客提出用の体裁ではなく、計算の前提・内訳を残す。
-                </div>
-
-                <div className="rounded-lg border bg-slate-50 p-3 text-sm mb-3">
-                  <div className="font-semibold">前提</div>
-                  <div className="text-xs text-slate-600 whitespace-pre-wrap">
-                    ・プラン：{tierLabel(data.tier)}（基礎単価 {fmtJPY(TIER_BASE_PER_UNIT[data.tier])}/頁）\n
-                    ・検査：{inspectionLabel(data.inspectionLevel)}（倍率 ×{INSPECTION_MULTIPLIER[data.inspectionLevel].toFixed(2)}）\n
-                    ・仕様プロファイル：{specProfileLabel(data.specProfile)}\n
-                    {data.specProfile === "gunma"
-                      ? `・群馬スイッチ：全数検査=${data.gunmaAllInspection ? "ON" : "OFF"}／媒体要件=${data.gunmaMediaRequirements ? "ON" : "OFF"}／メタデータ必須=${data.gunmaMetadataMandatory ? "ON" : "OFF"}`
-                      : ""}
-                  </div>
-                </div>
-
-                <LineItemTable items={calc.lineItems} />
-
-                <div className="mt-3 grid grid-cols-3 gap-3">
-                  <div className="rounded-lg border bg-white p-3">
-                    <div className="text-xs text-slate-600">小計（税抜）</div>
-                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.subtotal)}</div>
-                  </div>
-                  <div className="rounded-lg border bg-white p-3">
-                    <div className="text-xs text-slate-600">消費税</div>
-                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.tax)}</div>
-                  </div>
-                  <div className="rounded-lg border bg-slate-900 p-3 text-white">
-                    <div className="text-xs opacity-80">合計（税込）</div>
-                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.total)}</div>
-                  </div>
-                </div>
-
-                {data.includeInternalPlanDiffPage ? (
-                  <div className="mt-4 rounded-xl border bg-white p-4">
-                    <div className="text-sm font-semibold mb-2">（内部用）プラン差分説明（見積書の“続くページ”相当）</div>
-                    <div className="text-xs text-slate-700 whitespace-pre-wrap">
-                      目的：顧客提示の前に、プランの差（何が増えて何が減るか）を言語化しておく。\n
-                      \n
-                      ■ エコノミー\n
-                      ・価格優先。検査は「抜取」までを基本に、工程の深追いはしない。\n
-                      ・仕様書は必要十分の粒度（標準～NDL準拠）を選択可能。\n
-                      \n
-                      ■ スタンダード\n
-                      ・工程内の是正（撮り直し、命名ルール厳守、軽微な補正）を前提にした運用。\n
-                      ・NDL準拠のメタデータ（項目群・整合性）を実務レベルで回す。\n
-                      \n
-                      ■ プレミアム\n
-                      ・品質責任を強く負う前提。全数検査・二重検査、監査可能な情報管理、詳細ログ等を含む。\n
-                      ・厳格仕様（群馬仕様のような「全数検査／媒体要件／メタデータ必須」をONにした案件）にも耐える。\n
-                      \n
-                      ※ 本システムでは、差分を「基礎単価」「加算要素」「検査倍率」「案件固定費（管理・セットアップ）」に分解して表現している。
-                    </div>
-                  </div>
-                ) : null}
-              </Page>
-            ) : null}
-
-            {data.includeSpecDoc ? (
-              <Page title="仕様書（ドラフト：規格スイッチ連動）">
-                <div className="mb-3 rounded-lg border bg-slate-50 p-3 text-sm">
-                  <div className="font-semibold text-slate-800">仕様プロファイル：{specProfileLabel(data.specProfile)}</div>
-                  <div className="text-xs text-slate-600">
-                    検査：{inspectionLabel(data.inspectionLevel)}
-                    {data.specProfile === "gunma"
-                      ? ` ／ 群馬スイッチ：全数検査=${data.gunmaAllInspection ? "ON" : "OFF"}・媒体要件=${data.gunmaMediaRequirements ? "ON" : "OFF"}・メタデータ必須=${data.gunmaMetadataMandatory ? "ON" : "OFF"}`
-                      : ""}
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  {specSections.map((s, idx) => (
-                    <div key={idx} className="rounded-xl border bg-white p-3">
-                      <div className="text-sm font-semibold text-slate-800 mb-2">{s.title}</div>
-                      <div className="text-sm text-slate-700 whitespace-pre-wrap">{s.body}</div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-3 text-xs text-slate-600 whitespace-pre-wrap">
-                  【注】本仕様書は、本システムの入力情報から自動生成されるドラフトである。発注仕様（RFP）に固有の要件がある場合は、該当箇所を追記・優先する。
-                </div>
-              </Page>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="mt-6 text-xs text-slate-600">
-          使い方：入力→右側に見積書／内部計算書／仕様書が同時に反映される。群馬仕様のように「全数検査」「媒体要件」「メタデータ必須項目」をスイッチ化してあるため、以後の実例投入で破綻しにくい構造である。
+          </main>
         </div>
       </div>
     </div>
