@@ -175,11 +175,6 @@ function uid(prefix: string) {
   return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
 }
 
-function toInt(v: string, fallback = 0) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(0, Math.trunc(n));
-}
 
 function toMoney(v: string, fallback = 0) {
   const n = Number(v);
@@ -615,7 +610,7 @@ function TextField(props: {
       <Label>{props.label}</Label>
       <input
         className="w-full rounded-lg border px-3 py-2 text-sm"
-        value={props.value}
+        value={String(props.value)}
         placeholder={props.placeholder}
         onChange={(e) => props.onChange(e.target.value)}
       />
@@ -649,7 +644,7 @@ function NumberField(props: {
   );
 }
 
-function SelectField<T extends string>(props: {
+function SelectField<T extends string | number>(props: {
   label: string;
   value: T;
   onChange: (v: T) => void;
@@ -661,11 +656,15 @@ function SelectField<T extends string>(props: {
       <Label>{props.label}</Label>
       <select
         className="w-full rounded-lg border px-3 py-2 text-sm"
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value as T)}
+        value={String(props.value)}
+        onChange={(e) => {
+          const raw = e.target.value;
+          const found = props.options.find((o) => String(o.value) === raw);
+          props.onChange((found ? found.value : (props.options[0]?.value as T)) as T);
+        }}
       >
         {props.options.map((o) => (
-          <option key={o.value} value={o.value}>
+          <option key={String(o.value)} value={String(o.value)}>
             {o.label}
           </option>
         ))}
