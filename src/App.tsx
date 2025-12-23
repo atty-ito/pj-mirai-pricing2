@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 /**
  * v24_3.tsx
@@ -34,8 +34,7 @@ type WorkItem = {
   formats: FileFormat[];
   ocr: boolean;
   metadataLevel: MetadataLevel;
-  handling: Handling;
-  notes: string;
+  handling: Handling;  notes?: string;
 };
 
 type MiscExpense = {
@@ -199,6 +198,17 @@ function tierLabel(t: Tier) {
   if (t === "economy") return "エコノミー";
   if (t === "standard") return "スタンダード";
   return "プレミアム";
+}
+
+
+function deriveSpecFlags(d: Data) {
+  const requireMedia =
+    d.specProfile === "gunma" ? d.gunmaMediaRequirements : d.specProfile === "ndl";
+  const requireMetadata =
+    d.specProfile === "gunma" ? d.gunmaMetadataMandatory : d.specProfile === "ndl";
+  const fullInspection =
+    d.specProfile === "gunma" ? d.gunmaAllInspection : d.inspectionLevel === "all";
+  return { requireMedia, requireMetadata, fullInspection };
 }
 
 function specProfileLabel(p: SpecProfile) {
@@ -585,7 +595,7 @@ function buildSpecSections(data: Data): SpecSection[] {
 
 // ---- UI部品 ----
 
-function Card(props: { title: string; children: React.ReactNode; right?: React.ReactNode }) {
+function Card(props: { title: string; children: ReactNode; right?: ReactNode }) {
   return (
     <div className="rounded-2xl border bg-white shadow-sm">
       <div className="flex items-center justify-between border-b px-4 py-3">
@@ -597,7 +607,7 @@ function Card(props: { title: string; children: React.ReactNode; right?: React.R
   );
 }
 
-function Label(props: { children: React.ReactNode }) {
+function Label(props: { children: ReactNode }) {
   return <div className="text-xs font-medium text-slate-600 mb-1">{props.children}</div>;
 }
 
@@ -614,6 +624,27 @@ function TextField(props: {
         className="w-full rounded-lg border px-3 py-2 text-sm"
         value={String(props.value)}
         placeholder={props.placeholder}
+        onChange={(e) => props.onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
+function TextAreaField(props: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
+}) {
+  return (
+    <div>
+      <Label>{props.label}</Label>
+      <textarea
+        className="w-full rounded-lg border px-3 py-2 text-sm"
+        value={String(props.value)}
+        placeholder={props.placeholder}
+        rows={props.rows ?? 4}
         onChange={(e) => props.onChange(e.target.value)}
       />
     </div>
@@ -734,7 +765,7 @@ function LineItemTable(props: { items: LineItem[] }) {
   );
 }
 
-function Page(props: { title: string; children: React.ReactNode }) {
+function Page(props: { title: string; children: ReactNode }) {
   return (
     <div className="rounded-2xl border bg-white shadow-sm">
       <div className="border-b px-4 py-3">
@@ -832,6 +863,17 @@ export default function App() {
 
 
   const calc = useMemo(() => computeCalc(data), [data]);
+  const specFlags = useMemo(
+    () => deriveSpecFlags(data),
+    [
+      data.specProfile,
+      data.gunmaAllInspection,
+      data.gunmaMediaRequirements,
+      data.gunmaMetadataMandatory,
+      data.inspectionLevel,
+    ]
+  );
+
 
   const specSections = useMemo(() => buildSpecSections(data), [data]);
 
@@ -916,7 +958,7 @@ export default function App() {
                 <div className="font-semibold">現在の前提</div>
                 <div className="mt-1 space-y-1 text-slate-600">
                   <div>
-                    標準: <span className="font-medium text-slate-800">{standardLabel(data.standard)}</span>
+                    標準: <span className="font-medium text-slate-800">{specProfileLabel(data.specProfile)}</span>
                   </div>
                   <div>
                     プラン: <span className="font-medium text-slate-800">{tierLabel(data.tier)}</span>
@@ -938,6 +980,7 @@ export default function App() {
                               <TextField label="案件名" value={data.projectName} onChange={(v) => setData((p) => ({ ...p, projectName: v }))} />
                               <TextField label="担当者名" value={data.contactName} onChange={(v) => setData((p) => ({ ...p, contactName: v }))} />
                               <TextField label="発行日" value={data.issueDate} onChange={(v) => setData((p) => ({ ...p, issueDate: v }))} />
+                              <TextField label="納期（任意）" value={data.dueDate} onChange={(v) => setData((p) => ({ ...p, dueDate: v }))} placeholder="例：2026-01-31 / 要相談" />
                             </div>
                           </Card>
 
@@ -1340,34 +1383,64 @@ export default function App() {
                         <div className="rounded-lg border border-slate-200 bg-white p-3">
                           <div className="text-xs font-semibold text-slate-700">作業要件スイッチ</div>
                           <div className="mt-1 space-y-0.5 text-sm text-slate-900">
-                            <div>標準: {standardLabel(data.standard)}</div>
-                            <div>媒体要件: {data.requireMedia ? "必須" : "任意"}</div>
-                            <div>メタデータ: {data.requireMetadata ? "必須" : "任意"}</div>
-                            <div>検査: {data.fullInspection ? "全数検査" : inspectionLabel(data.inspectionLevel)}</div>
+                            <div>標準: {specProfileLabel(data.specProfile)}</div>
+                            <div>媒体要件: {specFlags.requireMedia ? "必須" : "任意"}</div>
+                            <div>メタデータ: {specFlags.requireMetadata ? "必須" : "任意"}</div>
+                            <div>検査: {specFlags.fullInspection ? "全数検査" : inspectionLabel(data.inspectionLevel)}</div>
                           </div>
                         </div>
                       </div>
 
-                      <div className="rounded-lg border border-slate-200 bg-white p-3">
-                        <div className="text-xs font-semibold text-slate-700">作業範囲（チェックした項目）</div>
-                        <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                          {Object.entries(data.workItems).map(([k, v]) => (
-                            <div key={k} className="flex items-center gap-2 text-sm">
-                              <span
-                                className={[
-                                  "inline-flex h-5 w-5 items-center justify-center rounded-md border",
-                                  v ? "border-emerald-400 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white text-slate-400",
-                                ].join(" ")}
-                              >
-                                {v ? "✓" : "—"}
-                              </span>
-                              <span className="text-slate-900">{WORK_ITEM_LABELS[k as WorkItemKey]}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="rounded-lg border border-slate-200 bg-white p-3">
+                      
+<div className="rounded-lg border border-slate-200 bg-white p-3">
+  <div className="text-xs font-semibold text-slate-700">作業一覧（内部指示）</div>
+  <div className="mt-2 overflow-auto">
+    <table className="w-full text-xs">
+      <thead className="bg-slate-50">
+        <tr className="text-left">
+          <th className="p-2 border-b w-[26%]">作業</th>
+          <th className="p-2 border-b w-[12%]">数量</th>
+          <th className="p-2 border-b w-[26%]">スキャン仕様</th>
+          <th className="p-2 border-b w-[18%]">付帯</th>
+          <th className="p-2 border-b w-[18%]">備考</th>
+        </tr>
+      </thead>
+      <tbody>
+        {data.workItems.length === 0 ? (
+          <tr>
+            <td className="p-3 text-slate-500" colSpan={5}>
+              作業項目が未入力です。
+            </td>
+          </tr>
+        ) : (
+          data.workItems.map((w) => (
+            <tr key={w.id} className="align-top">
+              <td className="p-2 border-b">
+                <div className="font-medium text-slate-900">{w.title}</div>
+                <div className="text-[11px] text-slate-600">
+                  サイズ:{sizeLabel(w.sizeClass)} / 色:{colorModeLabel(w.colorMode)} / 解像度:{dpiLabel(w.dpi)}
+                </div>
+              </td>
+              <td className="p-2 border-b">
+                {toInt(w.qty)} {w.unit}
+              </td>
+              <td className="p-2 border-b">
+                <div>形式: {w.formats.map(formatLabel).join(", ")}</div>
+                <div>取扱: {handlingLabel(w.handling)}</div>
+              </td>
+              <td className="p-2 border-b">
+                <div>OCR: {w.ocr ? "あり" : "なし"}</div>
+                <div>メタデータ: {metadataLabel(w.metadataLevel)}</div>
+              </td>
+              <td className="p-2 border-b whitespace-pre-wrap">{w.notes || "—"}</td>
+            </tr>
+          ))
+        )}
+      </tbody>
+    </table>
+  </div>
+</div>
+<div className="rounded-lg border border-slate-200 bg-white p-3">
                         <div className="text-xs font-semibold text-slate-700">備品・実費（自由入力）</div>
                         <div className="mt-2">
                           {data.miscExpenses.length === 0 ? (
@@ -1546,10 +1619,10 @@ export default function App() {
                       <div className="rounded-lg border border-slate-200 bg-white p-3">
                         <div className="text-xs font-semibold text-slate-700">検査方式</div>
                         <div className="mt-2 space-y-1 text-sm text-slate-900">
-                          <div>標準: {standardLabel(data.standard)}</div>
-                          <div>検査: {data.fullInspection ? "全数検査" : inspectionLabel(data.inspectionLevel)}</div>
-                          <div>媒体要件: {data.requireMedia ? "必須" : "任意"}</div>
-                          <div>メタデータ: {data.requireMetadata ? "必須" : "任意"}</div>
+                          <div>標準: {specProfileLabel(data.specProfile)}</div>
+                          <div>検査: {specFlags.fullInspection ? "全数検査" : inspectionLabel(data.inspectionLevel)}</div>
+                          <div>媒体要件: {specFlags.requireMedia ? "必須" : "任意"}</div>
+                          <div>メタデータ: {specFlags.requireMetadata ? "必須" : "任意"}</div>
                         </div>
                       </div>
 
@@ -1571,8 +1644,8 @@ export default function App() {
                                 ["傾き/天地", "許容範囲内"],
                                 ["解像度/色", "指定プロファイル準拠"],
                                 ["ファイル名規則", "規則どおり"],
-                                ["メタデータ", data.requireMetadata ? "必須項目の欠落なし" : "任意（提供分のみ）"],
-                                ["媒体格納", data.requireMedia ? "媒体要件準拠" : "任意"],
+                                ["メタデータ", specFlags.requireMetadata ? "必須項目の欠落なし" : "任意（提供分のみ）"],
+                                ["媒体格納", specFlags.requireMedia ? "媒体要件準拠" : "任意"],
                               ].map(([item, criteria], i) => (
                                 <tr key={i} className="align-top">
                                   <td className="py-2 pr-3 font-medium text-slate-900">{item}</td>
