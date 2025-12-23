@@ -49,6 +49,8 @@ type Data = {
   projectName: string;
   contactName: string;
   issueDate: string;
+  dueDate: string;
+  notes: string;
 
   // プラン
   tier: Tier;
@@ -223,6 +225,30 @@ function inspectionLabel(lv: InspectionLevel) {
   if (lv === "full") return "全数検査";
   return "二重・全数検査（ダブルチェック）";
 }
+
+
+function toInt(v: number | string | null | undefined, fallback = 0): number {
+  if (v === null || v === undefined) return fallback;
+  const n = typeof v === "number" ? v : parseInt(String(v).replace(/,/g, ""), 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function sizeLabel(s: SizeClass): string {
+  return s;
+}
+
+function colorModeLabel(m: ColorMode): string {
+  return m === "mono" ? "モノクロ" : m === "gray" ? "グレースケール" : "カラー";
+}
+
+function dpiLabel(d: Dpi): string {
+  return `${d}dpi`;
+}
+
+function formatLabel(f: FileFormat): string {
+  return f;
+}
+
 
 function metadataLabel(lv: MetadataLevel) {
   if (lv === "none") return "なし";
@@ -812,6 +838,8 @@ export default function App() {
     projectName: "（案件名）",
     contactName: "（担当者名）",
     issueDate: new Date().toISOString().slice(0, 10),
+    dueDate: "",
+    notes: "",
 
     tier: "economy",
 
@@ -982,6 +1010,16 @@ export default function App() {
                               <TextField label="発行日" value={data.issueDate} onChange={(v) => setData((p) => ({ ...p, issueDate: v }))} />
                               <TextField label="納期（任意）" value={data.dueDate} onChange={(v) => setData((p) => ({ ...p, dueDate: v }))} placeholder="例：2026-01-31 / 要相談" />
                             </div>
+                            <div className="md:col-span-2">
+                              <TextAreaField
+                                label="案件備考（社内）"
+                                value={data.notes}
+                                onChange={(v) => setData((p) => ({ ...p, notes: v }))}
+                                placeholder="例：顧客の特記事項、品質要件の注意、追加見積の背景等"
+                                rows={3}
+                              />
+                            </div>
+
                           </Card>
 
                           <Card title="2) プランと検査">
@@ -1291,8 +1329,14 @@ export default function App() {
                                       </div>
 
                                       <div className="md:col-span-2">
-                                        <TextField label="備考" value={w.notes} onChange={(v) => updateWorkItem(w.id, { notes: v })} placeholder="例：禁裁断、欠損あり、ページ順の注意等" />
-                                      </div>
+  <TextAreaField
+    label="備考（案件個別）"
+    value={w.notes ?? ""}
+    onChange={(v) => setWorkItem(w.id, { notes: v })}
+    placeholder="例：禁裁断、欠損あり、ページ順の注意等"
+    rows={3}
+  />
+</div>
 
                                       {data.showUnitPriceBreakdown ? (
                                         <div className="md:col-span-2 rounded-xl border bg-slate-50 p-3">
