@@ -58,6 +58,7 @@ type Data = {
   // 仕様書出力
   includeQuotation: boolean;
   includePriceRationalePage: boolean;
+  includeFixedCostRationalePage: boolean;
   includeInternalCalc: boolean;
   includeSpecDoc: boolean;
   includeInstructionDoc: boolean;
@@ -435,6 +436,71 @@ function computeCalc(data: Data): CalcResult {
   const total = subtotal + tax;
 
   return { lineItems, subtotal, tax, total, unitBreakdowns };
+}
+
+type FixedCostRow = {
+  code: string;
+  label: string;
+  enabled: boolean;
+  amount: number;
+  rationale: string;
+};
+
+function buildFixedCostRows(data: Data): FixedCostRow[] {
+  const fixed = PROJECT_FIXED_FEES[data.tier];
+  return [
+    {
+      code: "F0",
+      label: "初期セットアップ費（案件固定）",
+      enabled: true,
+      amount: fixed.setup,
+      rationale:
+        "仕様確定〜作業設計、命名規則・メタデータ定義、サンプル検証、環境・帳票の初期セットアップ等。",
+    },
+    {
+      code: "F1",
+      label: "進行管理・品質管理費（案件固定）",
+      enabled: true,
+      amount: fixed.management,
+      rationale:
+        "工程管理、品質レビュー、問合せ窓口、差戻し・再作業の統制、納品前チェック、証跡管理等。",
+    },
+    {
+      code: "F2",
+      label: "燻蒸（防カビ・防虫）",
+      enabled: data.includeFumigation,
+      amount: ADDON_FIXED_FEES.fumigation,
+      rationale: "防カビ・防虫のための燻蒸工程（資材・手配・作業）を含みます。",
+    },
+    {
+      code: "F3",
+      label: "長期保存用資材への格納（ラベル・封緘等含む）",
+      enabled: data.includePacking,
+      amount: ADDON_FIXED_FEES.packing,
+      rationale: "保存箱・中性紙封筒等への格納、ラベル・封緘、簿冊単位の管理等を含みます。",
+    },
+    {
+      code: "F4",
+      label: "集荷・納品（梱包・輸送手配含む）",
+      enabled: data.includePickupDelivery,
+      amount: ADDON_FIXED_FEES.pickupDelivery,
+      rationale: "梱包・輸送手配・受領／引渡しの立会い等を含みます。",
+    },
+    {
+      code: "F5",
+      label: "現地作業（臨時設営・動線確保等）",
+      enabled: data.includeOnsite,
+      amount: ADDON_FIXED_FEES.onsite,
+      rationale: "現地での臨時設営、動線確保、作業スペース調整等を含みます。",
+    },
+    {
+      code: "F6",
+      label: "暗号化・アクセス制御（媒体暗号化／鍵管理等）",
+      enabled: data.includeEncryption,
+      amount: ADDON_FIXED_FEES.encryption,
+      rationale: "媒体暗号化、鍵管理、アクセス制御（必要に応じたログ運用）等を含みます。",
+    },
+  ];
 }
 
 // ---- 仕様書（規格スイッチに応じて詳細度が変わる） ----
@@ -849,6 +915,7 @@ export default function App() {
     includeQuotation: true,
 
     includePriceRationalePage: true,
+    includeFixedCostRationalePage: true,
     includeInternalCalc: true,
     includeSpecDoc: true,
       includeInstructionDoc: true,
@@ -888,10 +955,10 @@ export default function App() {
       },
       {
         id: uid("w"),
-        title: "大型図面（A2以上）",
+        title: "大型図面（A2）",
         qty: 120,
         unit: "点",
-        sizeClass: "A2以上",
+        sizeClass: "A2",
         colorMode: "color",
         dpi: 400,
         formats: ["TIFF", "PDF"],
@@ -1186,6 +1253,12 @@ export default function App() {
                                 checked={data.includePriceRationalePage}
                                 onChange={(v) => setData((p) => ({ ...p, includePriceRationalePage: v }))}
                                 hint="見積書の次ページとして、単価の積算根拠（L0〜）を出力します。"
+                              />
+                              <Checkbox
+                                label="顧客提出用：案件固定費の算定根拠（別紙）を同梱"
+                                checked={data.includeFixedCostRationalePage}
+                                onChange={(v) => setData((p) => ({ ...p, includeFixedCostRationalePage: v }))}
+                                hint="見積書の次ページ以降として、初期セットアップ費・管理費・付帯定額の内訳と算定根拠を出力します。"
                               />
                               <Checkbox
                                 label="内部用：計算書を出力"
@@ -1739,6 +1812,111 @@ export default function App() {
                                 <div className="mt-4 text-xs text-slate-600">
                                   参考：案件固定費（初期セットアップ費／進行管理・品質管理費）は、ページ単価とは別に案件単位で計上します。
                                 </div>
+                              </Page>
+                            ) : null}
+
+                            {data.includeQuotation && data.includeFixedCostRationalePage ? (
+                              <Page title="顧客提出用：案件固定費の算定根拠（別紙）">
+                                <div className="mb-3 text-xs text-slate-600">
+                                  本別紙は、見積書に計上される「案件固定費（初期セットアップ費／進行管理・品質管理費）」および「付帯作業（定額）」の積算根拠を、顧客向けに明示するためのものです。
+                                  作業単価（頁単価等）の積算根拠は、前ページ（単価算定根拠）をご参照ください。
+                                </div>
+
+                                {(() => {
+                                  const rows = buildFixedCostRows(data);
+                                  const fixedSubtotal = rows.filter((r) => r.enabled).reduce((s, r) => s + r.amount, 0);
+                                  const miscSubtotal = calc.lineItems
+                                    .filter((li) => li.kind === "misc")
+                                    .reduce((s, li) => s + li.amount, 0);
+                                  const subtotal = fixedSubtotal + miscSubtotal;
+                                  const tax = Math.round(subtotal * data.taxRate);
+                                  const total = subtotal + tax;
+
+                                  return (
+                                    <div className="space-y-4">
+                                      <div className="rounded-lg border border-slate-200 bg-white">
+                                        <div className="border-b border-slate-200 px-3 py-2 text-sm font-semibold">固定費・付帯定額の内訳（F0〜）</div>
+                                        <table className="w-full text-xs">
+                                          <thead className="bg-slate-50">
+                                            <tr>
+                                              <th className="py-2 px-2 text-left">コード</th>
+                                              <th className="py-2 px-2 text-left">項目</th>
+                                              <th className="py-2 px-2 text-left">適用</th>
+                                              <th className="py-2 px-2 text-right">金額（税抜）</th>
+                                              <th className="py-2 px-2 text-left">算定根拠（要旨）</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {rows.map((r) => (
+                                              <tr key={r.code} className="border-t border-slate-200">
+                                                <td className="py-2 px-2 font-mono">{r.code}</td>
+                                                <td className="py-2 px-2">{r.label}</td>
+                                                <td className="py-2 px-2">
+                                                  <span
+                                                    className={
+                                                      r.enabled
+                                                        ? "inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700"
+                                                        : "inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                                                    }
+                                                  >
+                                                    {r.enabled ? "ON（計上）" : "OFF（不計上）"}
+                                                  </span>
+                                                </td>
+                                                <td className={"py-2 px-2 text-right tabular-nums " + (r.enabled ? "" : "text-slate-400")}>
+                                                  {fmtJPY(r.amount)}
+                                                </td>
+                                                <td className={"py-2 px-2 " + (r.enabled ? "" : "text-slate-400")}>{r.rationale}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+
+                                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                                          <div className="text-sm font-semibold">固定費・付帯定額 小計（税抜）</div>
+                                          <div className="mt-1 text-xl font-bold tabular-nums">{fmtJPY(fixedSubtotal)}</div>
+                                          <div className="mt-2 text-xs text-slate-600">
+                                            ※ OFF の項目は「単価は表示するが、金額には算入しない」扱いです（顧客と合意した範囲のみ計上）。
+                                          </div>
+                                        </div>
+
+                                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                                          <div className="text-sm font-semibold">実費（入力値） 小計（税抜）</div>
+                                          <div className="mt-1 text-xl font-bold tabular-nums">{fmtJPY(miscSubtotal)}</div>
+                                          <div className="mt-2 text-xs text-slate-600">
+                                            ※ 保存箱・中性紙封筒・外付けHDD等の実費項目（0円初期）を入力した場合に反映されます。
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <div className="rounded-lg border border-slate-200 bg-white p-3">
+                                        <div className="flex items-baseline justify-between">
+                                          <div className="text-sm font-semibold">本別紙の対象合計（固定費＋実費）</div>
+                                          <div className="text-xs text-slate-600">税率：{Math.round(data.taxRate * 100)}%</div>
+                                        </div>
+                                        <div className="mt-2 space-y-1 text-sm">
+                                          <div className="flex justify-between">
+                                            <span>小計（税抜）</span>
+                                            <span className="tabular-nums">{fmtJPY(subtotal)}</span>
+                                          </div>
+                                          <div className="flex justify-between">
+                                            <span>消費税</span>
+                                            <span className="tabular-nums">{fmtJPY(tax)}</span>
+                                          </div>
+                                          <div className="flex justify-between text-base font-bold">
+                                            <span>合計（税込）</span>
+                                            <span className="tabular-nums">{fmtJPY(total)}</span>
+                                          </div>
+                                        </div>
+
+                                        <div className="mt-3 rounded-md bg-slate-50 p-2 text-xs text-slate-700">
+                                          参考：見積書全体の合計（税込）は {fmtJPY(calc.total)} です（作業単価×数量の部分は別紙「単価算定根拠」で説明）。
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
                               </Page>
                             ) : null}
 
