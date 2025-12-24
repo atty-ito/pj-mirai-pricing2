@@ -57,6 +57,7 @@ type Data = {
 
   // 仕様書出力
   includeQuotation: boolean;
+  includePriceRationalePage: boolean;
   includeInternalCalc: boolean;
   includeSpecDoc: boolean;
   includeInstructionDoc: boolean;
@@ -333,11 +334,11 @@ function computeCalc(data: Data): CalcResult {
       unitPrice: bd.finalUnitPrice,
       amount,
       note: [
-        `サイズ:${w.sizeClass}`,
-        `色:${w.colorMode}`,
-        `dpi:${w.dpi}`,
+        `サイズ:${sizeLabel(w.sizeClass)}`,
+        `色:${colorModeLabel(w.colorMode)}`,
+        `解像度:${dpiLabel(w.dpi)}`,
         `形式:${joinFormats(w.formats)}`,
-        w.ocr ? "OCR:有" : "OCR:無",
+        w.ocr ? "OCR:あり" : "OCR:なし",
         `メタデータ:${metadataLabel(w.metadataLevel)}`,
         `取扱:${handlingLabel(w.handling)}`,
       ].join(" / "),
@@ -440,189 +441,158 @@ function computeCalc(data: Data): CalcResult {
 
 type SpecSection = { title: string; body: string };
 
+
 function buildSpecSections(data: Data): SpecSection[] {
   const profile = data.specProfile;
+  const flags = deriveSpecFlags(data);
 
-  const base: SpecSection[] = [
-    {
-      title: "1. 目的",
-      body:
-        "本仕様書は、対象資料のデジタル化（撮影・補正・データ作成）および納品要件について、受託者が遵守すべき基準を定めるものである。",
-    },
-    {
-      title: "2. 対象範囲",
-      body:
-        data.workItems.length === 0
-          ? "対象範囲は別途協議により確定する。"
-          : data.workItems
-              .map((w, i) => {
-                const qty = Math.max(0, w.qty);
-                return `(${i + 1}) ${w.title || "（無題）"}：${qty}${w.unit}／サイズ:${w.sizeClass}／色:${w.colorMode}／dpi:${w.dpi}／形式:${joinFormats(
-                  w.formats
-                )}／OCR:${w.ocr ? "有" : "無"}／メタデータ:${metadataLabel(w.metadataLevel)}／取扱:${handlingLabel(w.handling)}`;
-              })
-              .join("\n"),
-    },
-    {
-      title: "3. 体制・役割",
-      body:
-        "受託者は、品質責任者および作業責任者を置き、工程管理・品質管理・情報管理を一体として実施する。委託者との窓口は、原則として作業責任者が担う。",
-    },
-  ];
+  const sections: SpecSection[] = [];
+  let n = 1;
+  const push = (label: string, body: string) => {
+    sections.push({ title: `${n}. ${label}`, body });
+    n += 1;
+  };
 
-  const qualityStandard =
-    profile === "standard"
-      ? "品質基準は、外観上の読取可能性を満たすことを最低条件とし、重大な欠落・判別不能がないことをもって合格とする。"
-      : "品質基準は、読取可能性に加え、裁断・歪み・傾き・欠落・黒つぶれ・白飛び・モアレ等を定義し、工程内で検知・是正することを前提とする。";
+  push(
+    "目的・範囲",
+    "本仕様書は、対象資料のデジタル化（撮影・補正・データ作成）および納品要件について、受託者が遵守すべき基準を定めるものである。"
+  );
 
-  const inspection = (() => {
-    // 群馬仕様のスイッチがONなら、実務上「全数」寄りに強制されるため、文言を補強する。
-    const baseLv = inspectionLabel(data.inspectionLevel);
-    if (profile !== "gunma") return `検査レベルは「${baseLv}」とする。`;
+  push(
+    "対象資料・数量",
+    data.workItems.length === 0
+      ? "対象範囲は別途協議により確定する。"
+      : data.workItems
+          .map((w, i) => {
+            const formats = w.formats.map((f) => formatLabel(f)).join(", ");
+            return `${i + 1}. ${w.title || "（無題）"}：${Math.max(0, w.qty).toLocaleString()}${w.unit}（${sizeLabel(w.sizeClass)} / ${colorModeLabel(w.colorMode)} / ${dpiLabel(
+              w.dpi
+            )} / 形式:${formats || "—"} / OCR:${w.ocr ? "あり" : "なし"} / メタデータ:${metadataLabel(w.metadataLevel)}）`;
+          })
+          .join("\n")
+  );
 
-    const parts: string[] = [];
-    parts.push(`検査レベルは「${baseLv}」とする。`);
-    if (data.gunmaAllInspection) {
-      parts.push("加えて、受入・工程内・出荷前の各段階において、全数検査を原則とする（抜取は例外）。");
-    }
-    if (data.gunmaMetadataMandatory) {
-      parts.push("メタデータは必須項目の欠落を不合格として扱い、是正完了まで納品対象に含めない。");
-    }
-    return parts.join("\n");
-  })();
+  push(
+    "作業体制",
+    [
+      "・工程責任者を置き、作業計画・進捗・品質の統括を行う。",
+      "・作業者は命名規則・取扱手順・補正基準を事前に共有し、工程内で逸脱が出ないよう運用する。",
+      profile === "ndl" || profile === "gunma"
+        ? "・仕様準拠（NDL／群馬）の場合、メタデータ整合・媒体要件・ログ保全の観点で、レビュー工程を追加する。"
+        : "・標準（簡易）の場合も、最低限の品質確認（欠落・破損・判読不能等の検知）を実施する。",
+    ].join("\n")
+  );
 
-  const sections: SpecSection[] = [
-    ...base,
-    {
-      title: "4. 作業工程",
-      body:
-        profile === "standard"
-          ? [
-              "(1) 受領・外観確認",
-              "(2) デジタル化（撮影・スキャン）",
-              "(3) 必要に応じた補正（傾き・余白等）",
-              "(4) 形式変換・ファイル命名",
-              "(5) 納品",
-            ].join("\n")
-          : [
-              "(1) 受領・員数確認・状態確認（破損・欠損・禁裁断等の識別）",
-              "(2) 前処理（ステープル除去、静電・反射配慮、マイラー図面等の扱い）",
-              "(3) デジタル化（撮影・スキャン）",
-              "(4) 画像処理（傾き、トリミング、濃度、色調、ページ順）",
-              "(5) 文字認識（OCR：対象の場合）",
-              "(6) 形式変換（PDF/A、TIFF、JP2等）",
-              "(7) メタデータ作成（対象の場合）",
-              "(8) 検査・是正（工程内・出荷前）",
-              "(9) 媒体格納・納品",
-            ].join("\n"),
-    },
-    { title: "5. 品質基準・検査", body: `${qualityStandard}\n\n${inspection}` },
-  ];
+  push(
+    "作業工程",
+    [
+      "1) 受入・棚卸・前処理（資料状態の確認、通番/ラベル付与）",
+      "2) 撮影・スキャン（解像度・色設定に従う）",
+      "3) 画像補正（傾き補正、トリミング、必要に応じた軽微な濃度補正）",
+      "4) データ生成（指定形式：TIFF/PDF/PDF-A/JPEG等）",
+      "5) メタデータ作成（仕様に応じて必須項目を作成）",
+      "6) 検査（抜取／全数／二重等。検査表により記録）",
+      "7) 納品データ作成（フォルダ構成、命名規則、チェックサム等）",
+      "8) 納品・受入確認・是正（必要時）",
+    ].join("\n")
+  );
 
-  // --- メタデータ（詳細度が規格スイッチで変化）
-  if (profile === "standard") {
-    sections.push({
-      title: "6. メタデータ",
-      body: "メタデータは、必要に応じて委託者との協議により最小限の項目を付与する。",
-    });
-  } else if (profile === "ndl") {
-    sections.push({
-      title: "6. メタデータ（NDL準拠の想定）",
-      body: [
-        "NDL等の公的機関の実務を参照し、最低限以下の項目群を基本とする（委託者指定がある場合は優先）。",
-        "・識別子（ID）",
-        "・タイトル",
-        "・作成者／編者",
-        "・作成年（推定を含む）",
-        "・資料種別",
-        "・言語",
-        "・主題（キーワード）",
-        "・所蔵情報（請求記号、所在等）",
-        "・権利情報（公開区分、利用条件）",
-        "・デジタル化情報（解像度、色、機材等の記録）",
-        "・ファイル参照（ファイル名、フォルダ階層、ページ対応）",
-      ].join("\n"),
-    });
-  } else {
-    // gunma
-    const mandatory = data.gunmaMetadataMandatory
-      ? [
-          "（群馬仕様）メタデータ必須項目を欠くデータは不合格とし、是正を完了するまで納品対象から除外する。",
-          "必須項目例（案件により増減）：",
-          "・資料ID（唯一性を担保）",
-          "・タイトル（原資料に基づく）",
-          "・年代（不明の場合は推定／不明フラグ）",
-          "・資料区分",
-          "・所蔵／所在情報",
-          "・画像ファイル名（完全一致）",
-          "・ページ番号（対応付け）",
-        ].join("\n")
-      : "（群馬仕様）メタデータは厳格に管理するが、必須項目の確定は委託者の指定に従う。";
+  // --- 追加：納品構成・命名規則（不足しがちな実務記述を厚くする）
+  push(
+    "納品データ構成・命名規則",
+    [
+      "【基本方針】",
+      "・納品データは、原則として「保存用（master）」「閲覧用（access）」「メタデータ（metadata）」「ログ・証跡（log）」の階層構造で管理する。",
+      "・命名は、通番の一意性を担保し、後工程（検索・突合・監査）に耐える形式とする。",
+      "",
+      "【例：フォルダ構成】",
+      "・/master/  … 保存用TIFF等（非圧縮想定）",
+      "・/access/  … 閲覧用PDF/PDF-A/JPEG等",
+      "・/metadata/ … メタデータCSV/TSV/XML等",
+      "・/log/     … 検査表、是正履歴、チェックサム一覧等（プレミアム／厳格時）",
+      "",
+      "【例：命名規則（通番）】",
+      "・（案件ID）_（資料ID）_（通番5桁）.tif  例：PJ001_DOC01_00001.tif",
+      "・同一資料内で通番は欠番を作らない。欠番が生じる場合は理由をログへ記録する。",
+      "",
+      flags.requireMedia ? "【媒体・完全性】\n・チェックサム（例：SHA-256）一覧を作成し、納品媒体内に同梱する。" : "【媒体・完全性】\n・必要に応じ、チェックサム等の完全性手当を協議する。",
+      "・色管理が必要な場合（カラー/高精細等）は、ICCプロファイルの埋込または別添を行う。",
+    ].join("\n")
+  );
 
-    sections.push({
-      title: "6. メタデータ（群馬仕様：厳格）",
-      body: [
-        "NDL準拠相当の項目群をベースとしつつ、委託者が指定する必須項目・形式（CSV／XML等）・検査方法を優先する。",
-        mandatory,
-      ].join("\n\n"),
-    });
-  }
+  push(
+    "品質基準・検査",
+    [
+      "・欠落（ページ抜け）、重複、判読不能、極端な傾き、過度のトリミング欠落を不適合とする。",
+      flags.fullInspection ? "・検査は全数を原則とする。" : "・検査は抜取を基本とし、リスクに応じて全数へ移行する。",
+      data.tier === "premium" || profile === "gunma"
+        ? "・是正（再撮影・補正）を工程内で閉じる運用を前提とし、是正履歴を残す。"
+        : "・軽微な是正（傾き等）は工程内で対応し、重大なものは協議により判断する。",
+    ].join("\n")
+  );
 
-  // --- 媒体要件（群馬スイッチ）
+  push(
+    profile === "ndl" || profile === "gunma" ? "メタデータ（NDL／厳格）" : "メタデータ（任意）",
+    [
+      flags.requireMetadata
+        ? "・メタデータは必須。項目群、型、必須/任意、整合規則（例：日付形式、コード体系）を定め、不整合は不合格扱いとする。"
+        : "・メタデータは任意。必要時に、基本項目（例：資料名、通番、作成年、備考等）を作成する。",
+      "・メタデータと画像の突合（通番一致、件数一致）を実施する。",
+      "・納品形式は、CSV/TSV/XML等、発注者要件に従う。",
+    ].join("\n")
+  );
+
   if (profile === "gunma" && data.gunmaMediaRequirements) {
-    sections.push({
-      title: "7. 媒体要件（群馬仕様）",
-      body: [
-        "納品媒体および格納方式は、委託者指定を優先し、少なくとも以下を満たす。",
-        "・媒体：外付けSSD等（耐衝撃・耐久性）",
-        "・フォルダ構成：資料ID単位／論理単位で再現可能",
-        "・ファイル命名：仕様で定めた規則に完全一致",
-        "・チェックサム：SHA-256等により整合性検証が可能であること",
-        "・暗号化：必要に応じ、媒体暗号化／鍵の別送等を実施",
-      ].join("\n"),
-    });
+    push(
+      "媒体要件（群馬）",
+      [
+        "・納品媒体は、発注者指定に従う（外付けHDD/SSD等）。",
+        "・媒体ラベル（案件名・媒体番号・作成日）を付し、封緘・輸送手配までを行う。",
+        "・チェックサム一覧を同梱し、受入側で検証可能な状態とする。",
+      ].join("\n")
+    );
   }
 
-  // --- 情報管理
-  const infoMgmt =
-    profile === "standard"
-      ? "情報管理は、一般的なアクセス制御および持出管理を行う。"
-      : "情報管理は、アクセス権限、媒体・帳票の追跡、持出管理、暗号化、廃棄証跡まで含め、監査可能な形で実施する。";
+  push(
+    "情報管理",
+    [
+      "・作業データはアクセス制御された環境で保管し、不要な複製を作らない。",
+      data.tier === "premium" || profile === "gunma"
+        ? "・監査可能なログ（アクセス、持出、是正履歴）を保持する。"
+        : "・必要に応じ、作業記録（担当/日付/是正有無）を残す。",
+      "・納品後、保存期間・廃棄（消去）方針は契約・協議により定める。",
+    ].join("\n")
+  );
 
-  sections.push({ title: profile === "gunma" ? "8. 情報管理" : "7. 情報管理", body: infoMgmt });
+  push(
+    "受入・納品・是正",
+    [
+      "・納品前に件数一致、フォルダ構成、命名規則の適合を確認する。",
+      "・受入後に不適合が見つかった場合は、是正手順（再撮影/差替/ログ記録）に従い対応する。",
+      "・仕様変更（例：OCR追加、メタデータ項目追加）が発生した場合は、差分見積の対象とする。",
+    ].join("\n")
+  );
 
-  // --- 受入・納品・是正
-  sections.push({
-    title: profile === "gunma" ? "9. 受入・納品・是正" : "8. 受入・納品・是正",
-    body:
-      profile === "standard"
-        ? "納品物は、委託者の受領確認をもって検収とする。重大な欠陥が発見された場合、協議の上で是正を行う。"
-        : "納品物は、検収期間を設け、委託者が提示する検査手順に従い検収する。瑕疵がある場合、受託者は無償で是正し、再納品する。",
-  });
-
-  // --- 付帯
   const addonLines: string[] = [];
   if (data.includeFumigation) addonLines.push("・燻蒸（防カビ・防虫）");
-  if (data.includePacking) addonLines.push("・長期保存用資材への格納");
-  if (data.includePickupDelivery) addonLines.push("・集荷・納品");
-  if (data.includeOnsite) addonLines.push("・現地作業");
-  if (data.includeEncryption) addonLines.push("・暗号化・アクセス制御");
+  if (data.includePacking) addonLines.push("・長期保存資材への格納（保存箱・中性紙封筒等）");
+  if (data.includePickupDelivery) addonLines.push("・集荷・納品（梱包・輸送手配含む）");
+  if (data.includeOnsite) addonLines.push("・現地作業（臨時設営・動線確保等）");
+  if (data.includeEncryption) addonLines.push("・暗号化・アクセス制御（媒体暗号化／鍵管理等）");
 
-  if (addonLines.length) {
-    sections.push({
-      title: profile === "gunma" ? "10. 付帯作業" : "9. 付帯作業",
-      body: addonLines.join("\n"),
-    });
+  if (addonLines.length > 0) {
+    push("付帯作業", addonLines.join("\n"));
   }
 
   return sections;
 }
 
+
 // ---- UI部品 ----
 
 function Card(props: { title: string; children: ReactNode; right?: ReactNode }) {
   return (
-    <div className="rounded-2xl border bg-white shadow-sm">
+    <div className="print-page rounded-2xl border bg-white shadow-sm">
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="text-sm font-semibold text-slate-800">{props.title}</div>
         {props.right}
@@ -792,12 +762,46 @@ function LineItemTable(props: { items: LineItem[] }) {
 
 function Page(props: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-2xl border bg-white shadow-sm">
+    <div className="print-page rounded-2xl border bg-white shadow-sm">
       <div className="border-b px-4 py-3">
         <div className="text-sm font-semibold text-slate-800">{props.title}</div>
       </div>
       <div className="p-4">{props.children}</div>
     </div>
+  );
+}
+
+
+function PrintStyles() {
+  return (
+    <style>{`
+@page {
+  size: A4;
+  margin: 12mm 12mm 14mm 12mm;
+}
+
+@media print {
+  /* 画面UIを落とす */
+  .no-print { display: none !important; }
+
+  /* 背景・影を抑え、帳票として崩れない体裁へ */
+  body { background: #fff !important; }
+  .print-page {
+    width: 210mm !important;
+    min-height: 297mm !important;
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  /* 印刷時に濃色背景を避ける（シック＝黒ベタではなく、落ち着いたグレー運用） */
+  .bg-slate-900 { background: #fff !important; color: #000 !important; }
+  .text-white { color: #000 !important; }
+  .bg-slate-50 { background: #fff !important; }
+}
+    `}</style>
   );
 }
 
@@ -833,9 +837,9 @@ function NavButton(props: { active: boolean; label: string; hint: string; onClic
 
 export default function App() {
   const [data, setData] = useState<Data>(() => ({
-    clientName: "（顧客名）",
-    projectName: "（案件名）",
-    contactName: "（担当者名）",
+    clientName: "（匿名）",
+    projectName: "（案件名：例）",
+    contactName: "（担当者名：例）",
     issueDate: new Date().toISOString().slice(0, 10),
     dueDate: "",
     notes: "",
@@ -843,6 +847,8 @@ export default function App() {
     tier: "economy",
 
     includeQuotation: true,
+
+    includePriceRationalePage: true,
     includeInternalCalc: true,
     includeSpecDoc: true,
       includeInstructionDoc: true,
@@ -868,21 +874,67 @@ export default function App() {
     workItems: [
       {
         id: uid("w"),
-        title: "冊子（一般）",
-        qty: 1000,
+        title: "簿冊（保存用TIFF＋閲覧PDF）",
+        qty: 1200,
+        unit: "頁",
+        sizeClass: "A4以下",
+        colorMode: "color",
+        dpi: 400,
+        formats: ["TIFF", "PDF/A"],
+        ocr: false,
+        metadataLevel: "basic",
+        handling: "normal",
+        notes: "保存用（TIFF非圧縮想定）＋閲覧用（PDF/A）。ICCプロファイル埋込・チェックサム等は仕様書で規定。",
+      },
+      {
+        id: uid("w"),
+        title: "大型図面（A2以上）",
+        qty: 120,
+        unit: "点",
+        sizeClass: "A2以上",
+        colorMode: "color",
+        dpi: 400,
+        formats: ["TIFF", "PDF"],
+        ocr: false,
+        metadataLevel: "basic",
+        handling: "fragile",
+        notes: "折り・破損リスクを前提に、取扱い加算が入る想定。",
+      },
+      {
+        id: uid("w"),
+        title: "写真・図版（高精細）",
+        qty: 300,
+        unit: "点",
+        sizeClass: "A4以下",
+        colorMode: "color",
+        dpi: 600,
+        formats: ["TIFF", "JPEG"],
+        ocr: false,
+        metadataLevel: "basic",
+        handling: "normal",
+        notes: "色管理・解像度要件を厳格化した想定（ICC／傾き・色味の補正はプレミアムに寄る）。",
+      },
+      {
+        id: uid("w"),
+        title: "閲覧用PDF（OCRあり）",
+        qty: 800,
         unit: "頁",
         sizeClass: "A4以下",
         colorMode: "gray",
-        dpi: 400,
-        formats: ["PDF/A"],
+        dpi: 300,
+        formats: ["PDF"],
         ocr: true,
         metadataLevel: "basic",
         handling: "normal",
-        notes: "",
+        notes: "検索性の確保（OCR）を付す想定。原本の状態により精度は変動。",
       },
     ],
 
-    miscExpenses: [],
+    miscExpenses: [
+      { id: uid("m"), label: "外付けHDD（実費）", amount: 0 },
+      { id: uid("m"), label: "保存箱（実費）", amount: 0 },
+      { id: uid("m"), label: "中性紙封筒・ラベル等（実費）", amount: 0 },
+    ],
 
     taxRate: 0.1,
   }));
@@ -954,8 +1006,9 @@ export default function App() {
   // ---- 画面 ----
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
+      <PrintStyles />
       <div className="mx-auto max-w-7xl px-4 py-6">
-        <div className="mb-5 flex items-start justify-between gap-4">
+        <div className="mb-5 flex items-start justify-between gap-4 no-print">
           <div>
             <h1 className="text-xl font-bold tracking-tight">アーカイブ見積もりシステム</h1>
             <p className="mt-1 text-sm text-slate-600">
@@ -963,13 +1016,16 @@ export default function App() {
             </p>
           </div>
           <div className="text-right text-xs text-slate-500">
-            <div className="font-semibold text-slate-700">v24_5</div>
+            <div className="flex items-center justify-end gap-2">
+              <TinyButton label="印刷" kind="primary" onClick={() => window.print()} />
+            </div>
+            <div className="mt-2 font-semibold text-slate-700">v24_10</div>
             <div className="mt-0.5">{VIEW_ITEMS.find((x) => x.key === view)?.label}</div>
           </div>
         </div>
 
         <div className="flex gap-4">
-          <aside className="w-56 shrink-0">
+          <aside className="w-56 shrink-0 no-print">
             <div className="sticky top-4 space-y-2">
               {VIEW_ITEMS.map((it) => (
                 <NavButton
@@ -1124,6 +1180,12 @@ export default function App() {
                                 label="顧客提出用：見積書を出力"
                                 checked={data.includeQuotation}
                                 onChange={(v) => setData((p) => ({ ...p, includeQuotation: v }))}
+                              />
+                              <Checkbox
+                                label="顧客提出用：単価算定根拠（別紙）を同梱"
+                                checked={data.includePriceRationalePage}
+                                onChange={(v) => setData((p) => ({ ...p, includePriceRationalePage: v }))}
+                                hint="見積書の次ページとして、単価の積算根拠（L0〜）を出力します。"
                               />
                               <Checkbox
                                 label="内部用：計算書を出力"
@@ -1548,11 +1610,134 @@ export default function App() {
                                   </div>
                                 </div>
 
-                                <div className="mt-3 text-xs text-slate-600 whitespace-pre-wrap">
-                                  【注記】\n
-                                  1. 本見積は概算であり、数量確定・要件確定後に増減する可能性があります。\n
-                                  2. 仕様（NDL／群馬等）の詳細は、別紙仕様書に従います。\n
-                                  3. 価格は税抜表示（消費税別途）です。
+                                <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+                                  <div className="text-xs font-semibold text-slate-700">注記</div>
+                                  <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-slate-700">
+                                    <li>本見積は概算であり、数量確定・要件確定後に増減する可能性があります。</li>
+                                    <li>仕様（NDL／群馬等）の詳細は、別紙仕様書に従います。</li>
+                                    <li>価格は税抜表示（消費税別途）です。</li>
+                                  </ol>
+                                </div>
+                              </Page>
+                             ) : null}
+
+                            {data.includeQuotation && data.includePriceRationalePage ? (
+                              <Page title="顧客提出用：単価算定根拠（別紙）">
+                                <div className="mb-3 text-xs text-slate-600">
+                                  本別紙は、見積書の単価がどのように算定されたか（基礎単価＋加算要素×検査倍率）を、顧客向けに明示するためのものです。
+                                  端数処理は「円単位で四捨五入」を前提とします。
+                                </div>
+
+                                <div className="space-y-4">
+                                  {data.workItems.map((w, i) => {
+                                    const bd = calc.unitBreakdowns[w.id];
+                                    if (!bd) return null;
+                                    const formatParts = w.formats.map((f) => formatLabel(f)).join(", ");
+                                    return (
+                                      <div key={w.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                                        <div className="flex items-baseline justify-between gap-3">
+                                          <div className="text-sm font-semibold text-slate-800">
+                                            {i + 1}. {w.title || "（無題）"}
+                                          </div>
+                                          <div className="text-xs text-slate-600">
+                                            数量：{Math.max(0, w.qty).toLocaleString()} {w.unit}
+                                          </div>
+                                        </div>
+                                        <div className="mt-1 text-xs text-slate-600">
+                                          サイズ：{sizeLabel(w.sizeClass)} ／ 色：{colorModeLabel(w.colorMode)} ／ 解像度：{dpiLabel(w.dpi)} ／ 形式：{formatParts} ／ OCR：
+                                          {w.ocr ? "あり" : "なし"} ／ メタデータ：{metadataLabel(w.metadataLevel)} ／ 取扱：{handlingLabel(w.handling)}
+                                        </div>
+
+                                        <table className="mt-3 w-full text-xs">
+                                          <thead>
+                                            <tr className="border-b bg-slate-50">
+                                              <th className="py-2 px-2 text-left font-semibold text-slate-700">コード</th>
+                                              <th className="py-2 px-2 text-left font-semibold text-slate-700">要素</th>
+                                              <th className="py-2 px-2 text-right font-semibold text-slate-700">金額（円/単位）</th>
+                                              <th className="py-2 px-2 text-left font-semibold text-slate-700">備考</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            <tr className="border-b">
+                                              <td className="py-2 px-2 font-mono">L0</td>
+                                              <td className="py-2 px-2">基礎単価（プラン）</td>
+                                              <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(bd.base)}</td>
+                                              <td className="py-2 px-2">プラン：{tierLabel(data.tier)}</td>
+                                            </tr>
+                                            <tr className="border-b">
+                                              <td className="py-2 px-2 font-mono">L1</td>
+                                              <td className="py-2 px-2">サイズ加算</td>
+                                              <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(bd.size)}</td>
+                                              <td className="py-2 px-2">{sizeLabel(w.sizeClass)}</td>
+                                            </tr>
+                                            <tr className="border-b">
+                                              <td className="py-2 px-2 font-mono">L2</td>
+                                              <td className="py-2 px-2">色加算</td>
+                                              <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(bd.color)}</td>
+                                              <td className="py-2 px-2">{colorModeLabel(w.colorMode)}</td>
+                                            </tr>
+                                            <tr className="border-b">
+                                              <td className="py-2 px-2 font-mono">L3</td>
+                                              <td className="py-2 px-2">解像度加算</td>
+                                              <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(bd.dpi)}</td>
+                                              <td className="py-2 px-2">{dpiLabel(w.dpi)}</td>
+                                            </tr>
+                                            <tr className="border-b">
+                                              <td className="py-2 px-2 font-mono">L4</td>
+                                              <td className="py-2 px-2">形式加算</td>
+                                              <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(bd.formats)}</td>
+                                              <td className="py-2 px-2">{formatParts || "—"}</td>
+                                            </tr>
+                                            <tr className="border-b">
+                                              <td className="py-2 px-2 font-mono">L5</td>
+                                              <td className="py-2 px-2">OCR加算</td>
+                                              <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(bd.ocr)}</td>
+                                              <td className="py-2 px-2">{w.ocr ? "OCRあり" : "OCRなし"}</td>
+                                            </tr>
+                                            <tr className="border-b">
+                                              <td className="py-2 px-2 font-mono">L6</td>
+                                              <td className="py-2 px-2">メタデータ加算</td>
+                                              <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(bd.metadata)}</td>
+                                              <td className="py-2 px-2">{metadataLabel(w.metadataLevel)}</td>
+                                            </tr>
+                                            <tr className="border-b">
+                                              <td className="py-2 px-2 font-mono">L7</td>
+                                              <td className="py-2 px-2">取扱加算</td>
+                                              <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(bd.handling)}</td>
+                                              <td className="py-2 px-2">{handlingLabel(w.handling)}</td>
+                                            </tr>
+
+                                            <tr className="border-b bg-white">
+                                              <td className="py-2 px-2 font-mono">A1</td>
+                                              <td className="py-2 px-2 font-semibold">小計（検査倍率前）</td>
+                                              <td className="py-2 px-2 text-right font-semibold tabular-nums">{fmtJPY(bd.subtotal)}</td>
+                                              <td className="py-2 px-2">L0〜L7の合算</td>
+                                            </tr>
+                                            <tr className="border-b">
+                                              <td className="py-2 px-2 font-mono">M1</td>
+                                              <td className="py-2 px-2">検査倍率</td>
+                                              <td className="py-2 px-2 text-right tabular-nums">×{bd.inspectionMultiplier.toFixed(2)}</td>
+                                              <td className="py-2 px-2">{inspectionLabel(data.inspectionLevel)}</td>
+                                            </tr>
+                                            <tr>
+                                              <td className="py-2 px-2 font-mono">P1</td>
+                                              <td className="py-2 px-2 font-semibold">最終単価</td>
+                                              <td className="py-2 px-2 text-right font-semibold tabular-nums">{fmtJPY(bd.finalUnitPrice)}</td>
+                                              <td className="py-2 px-2">round(A1 × M1)</td>
+                                            </tr>
+                                          </tbody>
+                                        </table>
+
+                                        <div className="mt-2 text-xs text-slate-600">
+                                          金額（本行）：{fmtJPY(bd.finalUnitPrice)} × {Math.max(0, w.qty).toLocaleString()} = {fmtJPY(bd.finalUnitPrice * Math.max(0, w.qty))}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+
+                                <div className="mt-4 text-xs text-slate-600">
+                                  参考：案件固定費（初期セットアップ費／進行管理・品質管理費）は、ページ単価とは別に案件単位で計上します。
                                 </div>
                               </Page>
                             ) : null}
@@ -1565,13 +1750,18 @@ export default function App() {
 
                                 <div className="rounded-lg border bg-slate-50 p-3 text-sm mb-3">
                                   <div className="font-semibold">前提</div>
-                                  <div className="text-xs text-slate-600 whitespace-pre-wrap">
-                                    ・プラン：{tierLabel(data.tier)}（基礎単価 {fmtJPY(TIER_BASE_PER_UNIT[data.tier])}/頁）\n
-                                    ・検査：{inspectionLabel(data.inspectionLevel)}（倍率 ×{INSPECTION_MULTIPLIER[data.inspectionLevel].toFixed(2)}）\n
-                                    ・仕様プロファイル：{specProfileLabel(data.specProfile)}\n
-                                    {data.specProfile === "gunma"
-                                      ? `・群馬スイッチ：全数検査=${data.gunmaAllInspection ? "ON" : "OFF"}／媒体要件=${data.gunmaMediaRequirements ? "ON" : "OFF"}／メタデータ必須=${data.gunmaMetadataMandatory ? "ON" : "OFF"}`
-                                      : ""}
+                                  <div className="text-xs text-slate-600">
+                                    <ul className="list-disc space-y-1 pl-5">
+                                      <li>プラン：{tierLabel(data.tier)}（基礎単価 {fmtJPY(TIER_BASE_PER_UNIT[data.tier])}/頁）</li>
+                                      <li>検査：{inspectionLabel(data.inspectionLevel)}（倍率 ×{INSPECTION_MULTIPLIER[data.inspectionLevel].toFixed(2)}）</li>
+                                      <li>仕様プロファイル：{specProfileLabel(data.specProfile)}</li>
+                                      {data.specProfile === "gunma" ? (
+                                        <li>
+                                          群馬スイッチ：全数検査={data.gunmaAllInspection ? "ON" : "OFF"}／媒体要件={data.gunmaMediaRequirements ? "ON" : "OFF"}／メタデータ必須=
+                                          {data.gunmaMetadataMandatory ? "ON" : "OFF"}
+                                        </li>
+                                      ) : null}
+                                    </ul>
                                   </div>
                                 </div>
 
@@ -1595,22 +1785,32 @@ export default function App() {
                                 {data.includeInternalPlanDiffPage ? (
                                   <div className="mt-4 rounded-xl border bg-white p-4">
                                     <div className="text-sm font-semibold mb-2">（内部用）プラン差分説明（見積書の“続くページ”相当）</div>
-                                    <div className="text-xs text-slate-700 whitespace-pre-wrap">
-                                      目的：顧客提示の前に、プランの差（何が増えて何が減るか）を言語化しておく。\n
-                                      \n
-                                      ■ エコノミー\n
-                                      ・価格優先。検査は「抜取」までを基本に、工程の深追いはしない。\n
-                                      ・仕様書は必要十分の粒度（標準～NDL準拠）を選択可能。\n
-                                      \n
-                                      ■ スタンダード\n
-                                      ・工程内の是正（撮り直し、命名ルール厳守、軽微な補正）を前提にした運用。\n
-                                      ・NDL準拠のメタデータ（項目群・整合性）を実務レベルで回す。\n
-                                      \n
-                                      ■ プレミアム\n
-                                      ・品質責任を強く負う前提。全数検査・二重検査、監査可能な情報管理、詳細ログ等を含む。\n
-                                      ・厳格仕様（群馬仕様のような「全数検査／媒体要件／メタデータ必須」をONにした案件）にも耐える。\n
-                                      \n
-                                      ※ 本システムでは、差分を「基礎単価」「加算要素」「検査倍率」「案件固定費（管理・セットアップ）」に分解して表現している。
+                                    <div className="text-xs text-slate-700">
+                                      <div className="mb-2">
+                                        目的：顧客提示の前に、プランの差（何が増えて何が減るか）を、帳票として崩れない形で整理する。
+                                      </div>
+
+                                      <div className="mt-2 font-semibold">エコノミー</div>
+                                      <ul className="list-disc space-y-1 pl-5">
+                                        <li>価格優先。検査は「抜取」までを基本に、工程の深追いはしない。</li>
+                                        <li>仕様書は必要十分の粒度（標準〜NDL準拠）を選択可能。</li>
+                                      </ul>
+
+                                      <div className="mt-3 font-semibold">スタンダード</div>
+                                      <ul className="list-disc space-y-1 pl-5">
+                                        <li>工程内の是正（撮り直し、命名ルール厳守、軽微な補正）を前提にした運用。</li>
+                                        <li>NDL準拠のメタデータ（項目群・整合性）を実務レベルで回す。</li>
+                                      </ul>
+
+                                      <div className="mt-3 font-semibold">プレミアム</div>
+                                      <ul className="list-disc space-y-1 pl-5">
+                                        <li>品質責任を強く負う前提。全数検査・二重検査、監査可能な情報管理、詳細ログ等を含む。</li>
+                                        <li>厳格仕様（群馬仕様のような「全数検査／媒体要件／メタデータ必須」をONにした案件）にも耐える。</li>
+                                      </ul>
+
+                                      <div className="mt-3 text-slate-600">
+                                        ※ 本システムでは、差分を「基礎単価」「加算要素」「検査倍率」「案件固定費（管理・セットアップ）」に分解して表現している。
+                                      </div>
                                     </div>
                                   </div>
                                 ) : null}
