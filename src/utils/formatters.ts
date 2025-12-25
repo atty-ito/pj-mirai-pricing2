@@ -1,11 +1,13 @@
 import { 
+  Tier,
   SizeClass, 
   ColorMode, 
   Dpi, 
   MetadataLevel, 
   Handling, 
   InspectionLevel, 
-  SpecProfile 
+  SpecProfile,
+  FileFormat
 } from "../types/pricing";
 
 /**
@@ -122,7 +124,13 @@ export function toMoney(v: string, fallback = 0): number {
   return Math.max(0, Math.round(n));
 }
 
-// ---- ラベル変換関数（App.tsx から完全復元） ----
+// ---- ラベル変換関数 ----
+
+export function tierLabel(t: Tier): string {
+  if (t === "economy") return "エコノミー";
+  if (t === "standard") return "スタンダード";
+  return "プレミアム";
+}
 
 export function sizeLabel(s: SizeClass): string {
   return s;
@@ -134,6 +142,10 @@ export function colorModeLabel(m: ColorMode): string {
 
 export function dpiLabel(d: Dpi): string {
   return `${d}dpi`;
+}
+
+export function formatLabel(f: FileFormat): string {
+  return f;
 }
 
 export function specProfileLabel(p: SpecProfile): string {
