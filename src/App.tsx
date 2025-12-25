@@ -1816,8 +1816,8 @@ export default function App() {
                               />
                               <NumberField
                                 label="検査対象数量（合計）"
-                                value={data.inspectionCheckedQty}
-                                onChange={(v) => setData((p) => ({ ...p, inspectionCheckedQty: Math.max(0, Math.floor(v)) }))}
+                                value={data.inspectionCheckedCount}
+                                onChange={(v) => setData((p) => ({ ...p, inspectionCheckedCount: Math.max(0, Math.floor(v)) }))}
                                 min={0}
                                 suffix="件"
                               />
