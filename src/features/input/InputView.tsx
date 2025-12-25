@@ -1,7 +1,7 @@
 import { Data, WorkItem, MiscExpense, Tier, InspectionLevel, SpecProfile, MetadataLevel, Handling, SizeClass, ColorMode, Dpi, FileFormat } from "../../types/pricing";
 import { CalcResult } from "../../utils/calculations";
 import { TIER_BASE_PER_UNIT } from "../../constants/coefficients";
-import { fmtJPY, toInt, allocateQuotationNo, suggestQuotationNo, allocateInspectionReportNo, suggestInspectionReportNo } from "../../utils/formatters";
+import { fmtJPY, toInt, allocateQuotationNo, suggestQuotationNo } from "../../utils/formatters";
 import { Card } from "../../components/common/Card";
 import { TextField } from "../../components/common/TextField";
 import { TextAreaField } from "../../components/common/TextAreaField";
@@ -185,17 +185,71 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
         </div>
       </Card>
 
-      <Card title="7) 特殊工程・実費" tone="rose" subtitle="大型図面・前処理など、標準単価モデル外をここで吸収" right={<TinyButton label="＋追加" onClick={addMiscExpense} kind="primary" />}>
-        <div className="space-y-3">
-          {data.miscExpenses.map((m) => (
-            <div key={m.id} className="grid grid-cols-12 gap-2 items-end border-b pb-2">
-              <div className="col-span-12 md:col-span-4"><TextField label="作業内容" value={m.label} onChange={(v) => updateMiscExpense(m.id, { label: v })} /></div>
-              <div className="col-span-4 md:col-span-2"><NumberField label="数量" value={m.qty || 1} onChange={(v) => updateMiscExpense(m.id, { qty: v })} /></div>
-              <div className="col-span-4 md:col-span-2"><TextField label="単位" value={m.unit || "式"} onChange={(v) => updateMiscExpense(m.id, { unit: v })} /></div>
-              <div className="col-span-4 md:col-span-2"><NumberField label="単価(税抜)" value={m.unitPrice || 0} onChange={(v) => updateMiscExpense(m.id, { unitPrice: v, amount: (m.qty || 1) * v })} /></div>
-              <div className="col-span-12 md:col-span-1 flex items-center justify-end"><TinyButton label="削除" kind="danger" onClick={() => removeMiscExpense(m.id)} /></div>
-            </div>
-          ))}
+      <Card title="7) 特殊工程・実費" tone="rose" subtitle="大型図面・前処理・媒体実費など" right={<TinyButton label="＋追加" onClick={addMiscExpense} kind="primary" />}>
+        <div className="space-y-4">
+          {data.miscExpenses.map((m) => {
+            const isExpense = m.calcType === "expense";
+            const estPrice = isExpense ? Math.round((m.unitPrice || 0) * 1.3) : (m.unitPrice || 0);
+            
+            return (
+              <div key={m.id} className="rounded-xl border border-rose-100 bg-rose-50/50 p-3">
+                <div className="grid grid-cols-12 gap-3 items-start">
+                  <div className="col-span-12 md:col-span-3">
+                    <SelectField<MiscExpense["calcType"]>
+                      label="種別"
+                      value={m.calcType || "manual"}
+                      onChange={(v) => updateMiscExpense(m.id, { calcType: v })}
+                      options={[
+                        { value: "manual", label: "特殊工程 (手入力)" },
+                        { value: "expense", label: "実費購入 (+30%)" },
+                      ]}
+                    />
+                  </div>
+                  <div className="col-span-12 md:col-span-9 grid grid-cols-12 gap-2">
+                    <div className="col-span-12 md:col-span-5">
+                      <TextField label="項目名" value={m.label} onChange={(v) => updateMiscExpense(m.id, { label: v })} placeholder="例：大型図面補正 / 外付けHDD" />
+                    </div>
+                    <div className="col-span-4 md:col-span-2">
+                      <NumberField label="数量" value={m.qty || 1} onChange={(v) => updateMiscExpense(m.id, { qty: v })} />
+                    </div>
+                    <div className="col-span-4 md:col-span-2">
+                      <TextField label="単位" value={m.unit || "式"} onChange={(v) => updateMiscExpense(m.id, { unit: v })} />
+                    </div>
+                    <div className="col-span-4 md:col-span-3">
+                      <NumberField 
+                        label={isExpense ? "市場価格(税込)" : "単価(税抜)"} 
+                        value={m.unitPrice || 0} 
+                        onChange={(v) => updateMiscExpense(m.id, { unitPrice: v, amount: (m.qty || 1) * v })} 
+                      />
+                      {isExpense && (
+                        <div className="text-[10px] text-rose-600 text-right mt-0.5">
+                          見積提示額: {fmtJPY(estPrice)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* 2行目：備考と削除ボタン */}
+                  <div className="col-span-12 flex gap-3 items-start">
+                    <div className="flex-1">
+                      <TextField 
+                        label="工程説明・備考（見積書に記載）" 
+                        value={m.note || ""} 
+                        onChange={(v) => updateMiscExpense(m.id, { note: v })} 
+                        placeholder={isExpense ? "例：メーカー・型番・容量等" : "例：作業の詳細手順や前提条件など"}
+                      />
+                    </div>
+                    <div className="pt-6">
+                      <TinyButton label="削除" kind="danger" onClick={() => removeMiscExpense(m.id)} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {data.miscExpenses.length === 0 && (
+            <div className="text-sm text-slate-400 text-center py-4">項目がありません。「＋追加」ボタンで追加してください。</div>
+          )}
         </div>
       </Card>
 

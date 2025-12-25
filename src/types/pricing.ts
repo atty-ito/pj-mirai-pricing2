@@ -25,12 +25,13 @@ export type WorkItem = {
 
 export type MiscExpense = {
   id: string;
+  calcType: "manual" | "expense"; // manual=特殊工程(手入力), expense=実費(30%乗せ)
   label: string;
   qty?: number;
   unit?: string;
   unitPrice?: number;
   amount: number;
-  notes?: string;
+  note?: string; // 工程の説明などの付記
 };
 
 export type Data = {
