@@ -44,7 +44,17 @@ type WorkItem = {
 type MiscExpense = {
   id: string;
   label: string;
-  amount: number; // 税抜（原則）
+
+  // 特殊工程・実費は「作業内容＋数量＋単価」を入力できるようにする。
+  // 旧データ互換のため、qty/unit/unitPrice は optional とし、amount を最終の税抜金額として保持する。
+  qty?: number;
+  unit?: string;
+  unitPrice?: number;
+
+  // 税抜（原則）：表示・集計の最終値。通常は qty × unitPrice を UI 側で反映して保持する。
+  amount: number;
+
+  notes?: string;
 };
 
 type Data = {
@@ -177,6 +187,18 @@ const FORMAT_ADDER: Partial<Record<FileFormat, number>> = {
   TXT: 2,
   XML: 5,
 };
+
+/**
+ * 派生PDF（TIFF/JPEG 等のマスターから PDF / PDF-A を生成する工程）を価格に反映するための加算。
+ *
+ * 群①（量産スキャン型）で「下プランが実績を下回る」主因がここに出やすいため、
+ * まずはこの工程にテコを置いてキャリブレーションする。
+ *
+ * ※ PDF だけを納品形式とする案件（= マスター生成が伴わない）には原則適用しない。
+ */
+const DERIVED_PDF_SURCHARGE = 20;
+const DERIVED_PDFA_EXTRA = 3;
+
 
 const OCR_ADDER = 6;
 
@@ -398,7 +420,15 @@ function computeUnitPrice(tier: Tier, inspectionLevel: InspectionLevel, w: WorkI
   const color = COLOR_ADDER[w.colorMode];
   const dpi = DPI_ADDER[w.dpi];
 
-  const formats = (w.formats || []).reduce((sum, f) => sum + (FORMAT_ADDER[f] ?? 0), 0);
+const formatsBase = (w.formats || []).reduce((sum, f) => sum + (FORMAT_ADDER[f] ?? 0), 0);
+
+const hasMaster = (w.formats || []).some((f) => f === "TIFF" || f === "JPEG" || f === "JPEG2000");
+const hasPDF = (w.formats || []).some((f) => f === "PDF" || f === "PDF/A");
+const hasPDFA = (w.formats || []).includes("PDF/A");
+
+const derivedPdf = hasPDF && hasMaster ? DERIVED_PDF_SURCHARGE + (hasPDFA ? DERIVED_PDFA_EXTRA : 0) : 0;
+const formats = formatsBase + derivedPdf;
+
   const ocr = w.ocr ? OCR_ADDER : 0;
   const metadata = METADATA_ADDER[w.metadataLevel];
   const handling = HANDLING_ADDER[w.handling];
@@ -530,17 +560,38 @@ function computeCalc(data: Data): CalcResult {
     });
   }
 
-  // 4) 備品実費等（自由入力）
+  // 4) 特殊工程・実費（自由入力）
+  // - 旧：品目＋金額（amount）だけ
+  // - 新：品目＋数量＋単価（qty × unitPrice）も扱える（amount は最終の税抜金額）
   for (const m of data.miscExpenses) {
-    const amt = Math.max(0, Math.round(m.amount));
-    if (!m.label.trim() && amt === 0) continue;
+    const label = (m.label ?? "").trim();
+
+    const qty = Math.max(0, toInt(m.qty ?? 1, 1));
+    const unit = (m.unit ?? "式").trim() || "式";
+
+    // unitPrice が未設定でも旧データ互換として amount を単価扱いにできるよう補完する
+    const unitPrice =
+      m.unitPrice != null
+        ? Math.max(0, Math.round(m.unitPrice))
+        : qty > 0
+          ? Math.max(0, Math.round(m.amount / qty))
+          : Math.max(0, Math.round(m.amount));
+
+    // 旧互換：qty/unit/unitPrice が未入力なら amount をそのまま採る（単価＝合計）
+    const amount =
+      m.unitPrice != null || m.qty != null || m.unit != null
+        ? Math.max(0, Math.round(qty * unitPrice))
+        : Math.max(0, Math.round(m.amount));
+
+    if (!label && amount === 0) continue;
+
     lineItems.push({
       kind: "misc",
-      label: m.label.trim() || "備品実費等",
-      qty: 1,
-      unit: "式",
-      unitPrice: amt,
-      amount: amt,
+      label: label || "特殊工程・実費",
+      qty: qty || 1,
+      unit,
+      unitPrice,
+      amount,
     });
   }
 
@@ -1387,9 +1438,9 @@ export default function App() {
     ],
 
     miscExpenses: [
-      { id: uid("m"), label: "外付けHDD（実費）", amount: 0 },
-      { id: uid("m"), label: "保存箱（実費）", amount: 0 },
-      { id: uid("m"), label: "中性紙封筒・ラベル等（実費）", amount: 0 },
+      { id: uid("m"), label: "外付けHDD（実費）", qty: 1, unit: "式", unitPrice: 0, amount: 0, notes: "" },
+      { id: uid("m"), label: "保存箱（実費）", qty: 1, unit: "式", unitPrice: 0, amount: 0, notes: "" },
+      { id: uid("m"), label: "中性紙封筒・ラベル等（実費）", qty: 1, unit: "式", unitPrice: 0, amount: 0, notes: "" },
     ],
 
     taxRate: 0.1,
@@ -1480,7 +1531,7 @@ export default function App() {
   const addMiscExpense = () => {
     setData((p) => ({
       ...p,
-      miscExpenses: [...p.miscExpenses, { id: uid("m"), label: "備品実費等（自由入力）", amount: 0 }],
+      miscExpenses: [...p.miscExpenses, { id: uid("m"), label: "特殊工程（自由入力）", qty: 1, unit: "式", unitPrice: 0, amount: 0, notes: "" }],
     }));
   };
 
@@ -2103,27 +2154,92 @@ export default function App() {
                           </Card>
 
                           <Card
-                            title="6) 備品実費等（自由入力：品目＋金額 → 見積反映）"
+                            title="6) 特殊工程・実費（自由入力：品目＋数量＋単価 → 見積反映）"
                             right={<TinyButton label="＋追加" onClick={addMiscExpense} kind="primary" />}
                           >
                             {data.miscExpenses.length === 0 ? (
                               <div className="text-sm text-slate-600">
-                                追加がない場合は空のままでよい。未知の備品・資材等の実費が出た際に、ここへ「文字列＋金額」を追加し、そのまま見積書へ反映します。
+                                特殊工程・実費が発生した場合に、作業内容を自由入力で追加できます（数量・単価まで入力可）。見積書にも反映されます。
+                                <div className="mt-1 text-xs text-slate-500">
+                                  ※ 一式の実費であれば「数量=1／単価=合計」として入力すれば足ります。
+                                </div>
                               </div>
                             ) : (
                               <div className="space-y-3">
-                                {data.miscExpenses.map((m) => (
-                                  <div key={m.id} className="rounded-xl border bg-white p-3">
-                                    <div className="mb-2 flex items-center justify-between">
-                                      <div className="text-sm font-semibold text-slate-800">備品実費等</div>
-                                      <TinyButton label="削除" onClick={() => removeMiscExpense(m.id)} kind="danger" />
+                                {data.miscExpenses.map((m) => {
+                                  const qty = Math.max(0, toInt(m.qty ?? 1, 1));
+                                  const unit = (m.unit ?? "式").trim() || "式";
+                                  const unitPrice =
+                                    m.unitPrice != null
+                                      ? Math.max(0, Math.round(m.unitPrice))
+                                      : qty > 0
+                                        ? Math.max(0, Math.round(m.amount / qty))
+                                        : Math.max(0, Math.round(m.amount));
+                                  const amount = Math.max(0, Math.round(qty * unitPrice));
+
+                                  return (
+                                    <div key={m.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                                      <div className="grid grid-cols-12 gap-2 items-end">
+                                        <div className="col-span-12 md:col-span-4">
+                                          <TextField
+                                            label="作業内容"
+                                            value={m.label}
+                                            onChange={(v) => updateMiscExpense(m.id, { label: v })}
+                                          />
+                                        </div>
+
+                                        <div className="col-span-4 md:col-span-2">
+                                          <NumberField
+                                            label="数量"
+                                            value={String(qty)}
+                                            onChange={(v) => {
+                                              const newQty = Math.max(0, toInt(v, 1));
+                                              const newAmount = Math.max(0, Math.round(newQty * unitPrice));
+                                              updateMiscExpense(m.id, { qty: newQty, amount: newAmount });
+                                            }}
+                                          />
+                                        </div>
+
+                                        <div className="col-span-4 md:col-span-2">
+                                          <TextField
+                                            label="単位"
+                                            value={unit}
+                                            onChange={(v) => updateMiscExpense(m.id, { unit: v })}
+                                          />
+                                        </div>
+
+                                        <div className="col-span-4 md:col-span-2">
+                                          <NumberField
+                                            label="単価（税抜）"
+                                            value={String(unitPrice)}
+                                            onChange={(v) => {
+                                              const newUnitPrice = Math.max(0, toMoney(String(v), 0));
+                                              const newAmount = Math.max(0, Math.round(qty * newUnitPrice));
+                                              updateMiscExpense(m.id, { unitPrice: newUnitPrice, amount: newAmount });
+                                            }}
+                                          />
+                                        </div>
+
+                                        <div className="col-span-10 md:col-span-1">
+                                          <div className="text-[11px] text-slate-600">合計（税抜）</div>
+                                          <div className="mt-1 font-semibold text-slate-900">{fmtJPY(amount)}</div>
+                                        </div>
+
+                                        <div className="col-span-2 md:col-span-1 flex justify-end md:justify-start">
+                                          <TinyButton label="削除" kind="danger" onClick={() => removeMiscExpense(m.id)} />
+                                        </div>
+
+                                        <div className="col-span-12">
+                                          <TextField
+                                            label="備考（任意）"
+                                            value={m.notes ?? ""}
+                                            onChange={(v) => updateMiscExpense(m.id, { notes: v })}
+                                          />
+                                        </div>
+                                      </div>
                                     </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                      <TextField label="品目（自由入力）" value={m.label} onChange={(v) => updateMiscExpense(m.id, { label: v })} />
-                                      <NumberField label="金額（税抜）" value={m.amount} onChange={(v) => updateMiscExpense(m.id, { amount: v })} suffix="円" />
-                                    </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             )}
                           </Card>
