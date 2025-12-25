@@ -2191,7 +2191,7 @@ export default function App() {
                                         <div className="col-span-4 md:col-span-2">
                                           <NumberField
                                             label="数量"
-                                            value={String(qty)}
+                                            value={qty}
                                             onChange={(v) => {
                                               const newQty = Math.max(0, toInt(v, 1));
                                               const newAmount = Math.max(0, Math.round(newQty * unitPrice));
@@ -2211,7 +2211,7 @@ export default function App() {
                                         <div className="col-span-4 md:col-span-2">
                                           <NumberField
                                             label="単価（税抜）"
-                                            value={String(unitPrice)}
+                                            value={unitPrice}
                                             onChange={(v) => {
                                               const newUnitPrice = Math.max(0, toMoney(String(v), 0));
                                               const newAmount = Math.max(0, Math.round(qty * newUnitPrice));
