@@ -1,5 +1,14 @@
 import { Data } from "../types/pricing";
-import { num, inspectionLabel, metadataLabel, handlingLabel, sizeLabel, colorModeLabel, dpiLabel, specProfilePublicLabel } from "./formatters";
+import { 
+  num, 
+  inspectionLabel, 
+  metadataLabel, 
+  handlingLabel, 
+  sizeLabel, 
+  colorModeLabel, 
+  dpiLabel, 
+  specProfilePublicLabel 
+} from "./formatters";
 
 export type SpecSection = { title: string; body: string };
 
@@ -47,7 +56,7 @@ export function buildSpecSections(data: Data): SpecSection[] {
   if (profile !== "standard") {
     trimLines.push(
       "詳細以上では、トリミング倍率（例：110%）等の運用ルールを定め、見開き・折込・大判を含む場合でも一貫した外周取得を行う。",
-      "見開きや横長ページは、判型に応じて「1画像（見開き）」「左右分割」のいずれかを採用し、採用方式はログに記録する。",
+      "見開きや横長ページは、判型に応じて「1画像（見開き）」「左右分割」のいずれかを採用し、採用方式はログに記録する。"
     );
   }
   push("4. トリミング・判型・特殊ページ", trimLines);
@@ -68,13 +77,13 @@ export function buildSpecSections(data: Data): SpecSection[] {
   if (profile !== "standard") {
     qcLines.push(
       "詳細以上では、（必要に応じ）100%表示でのピクセル確認を行い、偽色・ノイズ・文字のつぶれ等を点検する。",
-      "再撮影・再スキャンが必要な場合は、工程内是正として行い、差替えの履歴をログに残す。",
+      "再撮影・再スキャンが必要な場合は、工程内是正として行い、差替えの履歴をログに残す。"
     );
   }
   if (profile === "gunma") {
     qcLines.push(
       "厳格では、傾き等の閾値（例：傾き2%以内など）を目安として運用し、全数検査を前提に是正を行う。",
-      "偽色・ノイズ・モアレ等の微細な劣化も不合格要因となり得るため、拡大確認を標準化する。",
+      "偽色・ノイズ・モアレ等の微細な劣化も不合格要因となり得るため、拡大確認を標準化する。"
     );
   }
   push("6. 画質基準・品質検査", qcLines);
@@ -86,7 +95,7 @@ export function buildSpecSections(data: Data): SpecSection[] {
   if (profile !== "standard") {
     colorLines.push(
       "詳細以上では、色空間（例：sRGB）やICCプロファイルの扱いを定め、同一資料群内で一貫性を担保する。",
-      "閲覧用PDFを作成する場合、画質と容量のバランスを考慮しつつ、視認性（文字のエッジ・階調）を損なわない設定とする。",
+      "閲覧用PDFを作成する場合、画質と容量のバランスを考慮しつつ、視認性（文字のエッジ・階調）を損なわない設定とする。"
     );
   }
   push("7. 画像処理・色管理", colorLines);
@@ -101,7 +110,7 @@ export function buildSpecSections(data: Data): SpecSection[] {
     mdLines.push(
       "詳細以上では、必須項目群を定め、欠落を不合格扱いとする（厳格の場合）。",
       "必須項目例：資料識別子／資料名／巻冊・簿冊識別／ページ（コマ）番号／ファイル名／作成日／形式／解像度／色／備考。",
-      "値の表記は、区切り（半角スペース、スラッシュ等）や禁則（使用不可文字等）を定め、整合性を担保する。",
+      "値の表記は、区切り（半角スペース、スラッシュ等）や禁則（使用不可文字等）を定め、整合性を担保する。"
     );
   }
   if (profile !== "standard") {

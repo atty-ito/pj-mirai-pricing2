@@ -1,3 +1,13 @@
+import { 
+  SizeClass, 
+  ColorMode, 
+  Dpi, 
+  MetadataLevel, 
+  Handling, 
+  InspectionLevel, 
+  SpecProfile 
+} from "../types/pricing";
+
 /**
  * 一意のID（ランダムな文字列）を生成する
  */
@@ -62,7 +72,6 @@ export function allocateQuotationNo(iso: string): string {
   const ymd = yyyymmdd(iso);
   if (!ymd) return "";
   if (typeof window === "undefined") return `${ymd}-001`;
-
   const key = `quote_seq_${ymd}`;
   const cur = Number(window.localStorage.getItem(key) || "0");
   const next = Math.max(1, cur + 1);
@@ -87,7 +96,6 @@ export function allocateInspectionReportNo(iso: string): string {
   const ymd = yyyymmdd(iso);
   if (!ymd) return "";
   if (typeof window === "undefined") return `INSP-${ymd}-001`;
-
   const key = `khq_insp_seq_${ymd}`;
   const cur = Number(window.localStorage.getItem(key) || "0");
   const next = Math.max(1, cur + 1);
@@ -112,4 +120,51 @@ export function toMoney(v: string, fallback = 0): number {
   const n = Number(v);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(0, Math.round(n));
+}
+
+// ---- ラベル変換関数（App.tsx から完全復元） ----
+
+export function sizeLabel(s: SizeClass): string {
+  return s;
+}
+
+export function colorModeLabel(m: ColorMode): string {
+  return m === "mono" ? "モノクロ" : m === "gray" ? "グレースケール" : "カラー";
+}
+
+export function dpiLabel(d: Dpi): string {
+  return `${d}dpi`;
+}
+
+export function specProfileLabel(p: SpecProfile): string {
+  if (p === "standard") return "標準";
+  if (p === "ndl") return "詳細";
+  return "厳格";
+}
+
+export function specProfilePublicLabel(p: SpecProfile): string {
+  if (p === "standard") return "標準";
+  if (p === "ndl") return "詳細";
+  return "厳格";
+}
+
+export function inspectionLabel(lv: InspectionLevel): string {
+  if (lv === "none") return "検査なし（目視確認レベル）";
+  if (lv === "sample") return "抜取検査";
+  if (lv === "full") return "全数検査";
+  return "二重・全数検査（ダブルチェック）";
+}
+
+export function metadataLabel(lv: MetadataLevel): string {
+  if (lv === "none") return "なし";
+  if (lv === "basic") return "基本";
+  return "充実";
+}
+
+export function handlingLabel(h: Handling): string {
+  if (h === "normal") return "通常";
+  if (h === "fragile") return "脆弱・破損懸念";
+  if (h === "bound") return "製本（裁断不可等）";
+  if (h === "mylars") return "マイラー図面等（静電・反射配慮）";
+  return "混在（個別判断）";
 }
