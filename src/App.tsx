@@ -1,4 +1,8 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+
+// ---- アプリ表示名（固定） ----
+
+const SYSTEM_NAME = "KHQ見積もり統合システム";
 
 /**
  * v24_3.tsx
@@ -44,6 +48,32 @@ type MiscExpense = {
 };
 
 type Data = {
+  // 見積No（顧客提出物の識別子。通番管理はローカルで補助）
+  quotationNo: string;
+
+  // 発行者情報（見積書・検査表の体裁に必要。初期値は仮置き）
+  issuerOrg: string;
+  issuerDept: string;
+  issuerRep: string;
+  issuerAddress: string;
+  issuerTel: string;
+  issuerBankName: string;
+  issuerBankBranch: string;
+  issuerBankType: string;
+  issuerBankAccount: string;
+  issuerBankAccountName: string;
+
+  // 検査結果（提出物としての検査表を完成させるための入力）
+  inspectionReportNo: string;
+  inspectionDate: string;
+  inspectionOverall: "pass" | "conditional" | "fail";
+  inspectionDefectCount: number;
+  inspectionReworkCount: number;
+  inspectionCheckedCount: number;
+  inspectionInspector: string;
+  inspectionApprover: string;
+  inspectionRemarks: string;
+
   // 基本情報
   clientName: string;
   projectName: string;
@@ -205,6 +235,62 @@ function fmtJPY(n: number) {
   return `${sign}¥${v.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 }
 
+function formatJPDate(iso: string) {
+  // iso: "YYYY-MM-DD" 前提（入力UIの date と整合）
+  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return String(iso || "");
+  const y = m[1];
+  const mm = String(Number(m[2]));
+  const dd = String(Number(m[3]));
+  return `${y}年${mm}月${dd}日`;
+}
+
+function yyyymmdd(iso: string) {
+  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return "";
+  return `${m[1]}${m[2]}${m[3]}`;
+}
+
+function suggestQuotationNo(iso: string) {
+  // 初期表示用（通番の確定ではなく“候補”）：KHQ-YYYYMMDD-001
+  const ymd = yyyymmdd(iso);
+  if (!ymd) return "";
+  return `KHQ-${ymd}-001`;
+}
+
+function allocateQuotationNo(iso: string) {
+  // 通番管理（ローカル）：同一日付で採番ボタンを押すたびに 001,002,... を払い出す
+  const ymd = yyyymmdd(iso);
+  if (!ymd) return "";
+  if (typeof window === "undefined") return `KHQ-${ymd}-001`;
+
+  const key = `khq_quote_seq_${ymd}`;
+  const cur = Number(window.localStorage.getItem(key) || "0");
+  const next = Math.max(1, cur + 1);
+  window.localStorage.setItem(key, String(next));
+  const seq = String(next).padStart(3, "0");
+  return `KHQ-${ymd}-${seq}`;
+}
+
+function suggestInspectionReportNo(iso: string) {
+  // 検査表の識別子：INSP-YYYYMMDD-001（候補）
+  const ymd = yyyymmdd(iso);
+  if (!ymd) return "";
+  return `INSP-${ymd}-001`;
+}
+
+function allocateInspectionReportNo(iso: string) {
+  const ymd = yyyymmdd(iso);
+  if (!ymd) return "";
+  if (typeof window === "undefined") return `INSP-${ymd}-001`;
+  const key = `khq_insp_seq_${ymd}`;
+  const cur = Number(window.localStorage.getItem(key) || "0");
+  const next = Math.max(1, cur + 1);
+  window.localStorage.setItem(key, String(next));
+  const seq = String(next).padStart(3, "0");
+  return `INSP-${ymd}-${seq}`;
+}
+
 function joinFormats(formats: FileFormat[]) {
   if (!formats.length) return "（未指定）";
   return formats.join(" / ");
@@ -237,6 +323,12 @@ function inspectionLabel(lv: InspectionLevel) {
   if (lv === "sample") return "抜取検査";
   if (lv === "full") return "全数検査";
   return "二重・全数検査（ダブルチェック）";
+}
+
+function inspectionOverallLabel(v: Data["inspectionOverall"]) {
+  if (v === "pass") return "合格";
+  if (v === "conditional") return "条件付合格";
+  return "不合格";
 }
 
 
@@ -845,8 +937,8 @@ function LineItemTable(props: { items: LineItem[] }) {
   return (
     <table className="w-full text-sm">
       <thead>
-        <tr className="border-b bg-slate-50">
-          <th className="py-2 px-2 text-left font-semibold text-slate-700">項目</th>
+        <tr className="border-b">
+          <th className="py-2 px-2 text-left font-semibold text-slate-700">摘要</th>
           <th className="py-2 px-2 text-right font-semibold text-slate-700">数量</th>
           <th className="py-2 px-2 text-left font-semibold text-slate-700">単位</th>
           <th className="py-2 px-2 text-right font-semibold text-slate-700">単価</th>
@@ -890,14 +982,53 @@ function specProfilePublicLabel(p: SpecProfile) {
 }
 
 const ISSUER = {
-  org: "株式会社◯◯",
+  org: "株式会社国際マイクロ写真工業社",
+  rep: "代表取締役　◯◯",
   dept: "総務部",
-  address: "東京都千代田区◯◯一丁目◯番◯号",
+  address: "〒000-0000 東京都○○区○○一丁目○番○号",
   tel: "03-0000-0000",
+  bankName: "○○銀行",
+  bankBranch: "○○支店",
+  bankType: "普通",
+  bankAccount: "0000000",
+  bankAccountName: "カ）コクサイマイクロシャシンコウギョウシャ",
 };
+
+function issuerFromData(d: Data) {
+  return {
+    org: d.issuerOrg || ISSUER.org,
+    rep: d.issuerRep || ISSUER.rep,
+    dept: d.issuerDept || ISSUER.dept,
+    address: d.issuerAddress || ISSUER.address,
+    tel: d.issuerTel || ISSUER.tel,
+    bankName: d.issuerBankName || ISSUER.bankName,
+    bankBranch: d.issuerBankBranch || ISSUER.bankBranch,
+    bankType: d.issuerBankType || ISSUER.bankType,
+    bankAccount: d.issuerBankAccount || ISSUER.bankAccount,
+    bankAccountName: d.issuerBankAccountName || ISSUER.bankAccountName,
+  };
+}
+
+function SealBox(props: { label?: string }) {
+  return (
+    <div className="inline-flex flex-col items-center justify-center border border-slate-500 w-12 h-12 text-[10px] text-slate-700">
+      <div>{props.label || "印"}</div>
+    </div>
+  );
+}
+
+function InlineSealBox(props: { label?: string }) {
+  return (
+    <span className="ml-2 inline-flex items-center justify-center border border-slate-500 w-7 h-7 text-[10px] text-slate-700 align-middle">
+      {props.label || "印"}
+    </span>
+  );
+}
 
 function DocHeader(props: { docTitle: string; data: Data }) {
   const d = props.data;
+  const isr = issuerFromData(d);
+  const qno = d.quotationNo || suggestQuotationNo(d.issueDate);
   return (
     <div className="mb-4">
       <div className="grid grid-cols-2 gap-4 text-[11px] leading-relaxed text-slate-800">
@@ -907,18 +1038,94 @@ function DocHeader(props: { docTitle: string; data: Data }) {
           <div>担当：{d.contactName || "（担当者）"}</div>
         </div>
         <div className="text-right">
-          <div className="font-semibold">{ISSUER.org}</div>
-          <div>{ISSUER.dept}</div>
-          <div>{ISSUER.address}</div>
-          <div>TEL {ISSUER.tel}</div>
-          <div>発行日：{d.issueDate || "—"}</div>
-          <div>有効期限：{d.dueDate || "—"}</div>
+          <div className="flex items-start justify-end gap-3">
+            <div className="text-right">
+              <div className="font-semibold">{isr.org}</div>
+              <div>{isr.rep}</div>
+              <div>{isr.dept}</div>
+              <div>{isr.address}</div>
+              <div>TEL {isr.tel}</div>
+              {qno ? <div>見積No：{qno}</div> : null}
+              <div>発行日：{d.issueDate || "—"}</div>
+              <div>有効期限：{d.dueDate || "—"}</div>
+            </div>
+            <div className="pt-1">
+              <SealBox />
+            </div>
+          </div>
         </div>
       </div>
 
       <div className="mt-3 text-center">
         <div className="text-lg font-semibold tracking-wide text-slate-900">{props.docTitle}</div>
         <div className="mt-1 text-sm text-slate-800">件名：{d.projectName || "（案件名）"}</div>
+      </div>
+
+      <div className="mt-3 border-t border-slate-300" />
+    </div>
+  );
+}
+
+function EstimateCoverHeader(props: { data: Data; totalAmount: number }) {
+  const d = props.data;
+  const estimateNo = d.quotationNo || suggestQuotationNo(d.issueDate);
+  const isr = issuerFromData(d);
+
+  return (
+    <div className="mb-4">
+      <div className="flex items-start justify-between gap-6 text-[11px] leading-relaxed text-slate-800">
+        <div className="min-w-0">
+          <div className="font-medium">No. {estimateNo || "—"}</div>
+        </div>
+        <div className="text-right">
+          <div className="flex items-start justify-end gap-3">
+            <div className="text-right">
+              <div className="font-semibold">{isr.org}</div>
+              <div>{isr.rep}</div>
+              <div>{isr.dept}</div>
+              <div>{isr.address}</div>
+              <div>TEL {isr.tel}</div>
+            </div>
+            <div className="pt-1">
+              <SealBox />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 text-center">
+        <div className="text-2xl font-semibold tracking-[0.5em] text-slate-900">見積書</div>
+      </div>
+
+      <div className="mt-4 flex justify-end text-sm text-slate-800">{formatJPDate(d.issueDate)}</div>
+
+      <div className="mt-2 text-sm leading-relaxed text-slate-900">
+        <div className="font-semibold">{d.clientName || "（顧客名）"} 御中</div>
+        {d.contactName ? <div>{d.contactName}</div> : null}
+      </div>
+
+      <div className="mt-4 grid grid-cols-[72px_1fr] gap-y-2 text-sm text-slate-900">
+        <div className="font-medium">件 名</div>
+        <div className="border-b border-slate-400 pb-0.5">{d.projectName || "（案件名）"}</div>
+        <div className="font-medium">見積金額</div>
+        <div className="border-b border-slate-400 pb-0.5 font-semibold tabular-nums">{fmtJPY(props.totalAmount)}</div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-4 text-[11px] text-slate-800">
+        <div>
+          <div>納品期日：{d.dueDate || "別途協議"}</div>
+          <div>作業場所：弊社（搬入・持込等は別途）</div>
+          <div>取引方法：納品後30日以内お振込み</div>
+        </div>
+        <div>
+          <div>有効期限：発行日より1ヶ月</div>
+          <div>連絡先：{isr.dept}</div>
+          <div>お問い合わせ：TEL {isr.tel}</div>
+        </div>
+      </div>
+
+      <div className="mt-3 text-[11px] text-slate-800">
+        <div>振込先：{isr.bankName} {isr.bankBranch}（{isr.bankType}）{isr.bankAccount}　{isr.bankAccountName}</div>
       </div>
 
       <div className="mt-3 border-t border-slate-300" />
@@ -1012,9 +1219,31 @@ function NavButton(props: { active: boolean; label: string; hint: string; onClic
 
 export default function App() {
   const [data, setData] = useState<Data>(() => ({
-    clientName: "（匿名）",
-    projectName: "（案件名：例）",
-    contactName: "（担当者名：例）",
+    quotationNo: "",
+    issuerOrg: ISSUER.org,
+    issuerDept: ISSUER.dept,
+    issuerRep: ISSUER.rep,
+    issuerAddress: ISSUER.address,
+    issuerTel: ISSUER.tel,
+    issuerBankName: ISSUER.bankName,
+    issuerBankBranch: ISSUER.bankBranch,
+    issuerBankType: ISSUER.bankType,
+    issuerBankAccount: ISSUER.bankAccount,
+    issuerBankAccountName: ISSUER.bankAccountName,
+
+    inspectionReportNo: "",
+    inspectionDate: "",
+    inspectionOverall: "pass",
+    inspectionDefectCount: 0,
+    inspectionReworkCount: 0,
+    inspectionCheckedCount: 0,
+    inspectionInspector: "",
+    inspectionApprover: "",
+    inspectionRemarks: "",
+
+    clientName: "株式会社○○",
+    projectName: "資料デジタル化業務",
+    contactName: "ご担当者 ○○ 様",
     issueDate: new Date().toISOString().slice(0, 10),
     dueDate: "",
     notes: "",
@@ -1031,7 +1260,7 @@ export default function App() {
       includeInstructionDoc: true,
       includeInspectionDoc: true,
 
-    specProfile: "ndl",
+    specProfile: "standard",
     gunmaAllInspection: true,
     gunmaMediaRequirements: true,
     gunmaMetadataMandatory: true,
@@ -1117,8 +1346,34 @@ export default function App() {
   }));
   const [view, setView] = useState<ViewKey>("input");
 
+  // 見積No・検査報告Noは、空であれば候補値を自動で入れる（確定採番は「採番」ボタンで行う）
+  useEffect(() => {
+    setData((prev) => {
+      const nextQuotationNo = prev.quotationNo || suggestQuotationNo(prev.issueDate);
+      const nextInspectionNo = prev.inspectionReportNo || suggestInspectionReportNo(prev.issueDate);
+      const nextInspectionDate = prev.inspectionDate || prev.issueDate;
+
+      if (
+        nextQuotationNo === prev.quotationNo &&
+        nextInspectionNo === prev.inspectionReportNo &&
+        nextInspectionDate === prev.inspectionDate
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        quotationNo: nextQuotationNo,
+        inspectionReportNo: nextInspectionNo,
+        inspectionDate: nextInspectionDate,
+      };
+    });
+  }, [data.issueDate]);
+
 
   const calc = useMemo(() => computeCalc(data), [data]);
+  const issuer = useMemo(() => issuerFromData(data), [data]);
+  const quotationNo = data.quotationNo || suggestQuotationNo(data.issueDate);
+  const inspectionReportNo = data.inspectionReportNo || suggestInspectionReportNo(data.issueDate);
   const specFlags = useMemo(
     () => deriveSpecFlags(data),
     [
@@ -1186,7 +1441,7 @@ export default function App() {
       <div className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-5 flex items-start justify-between gap-4 no-print">
           <div>
-            <h1 className="text-xl font-bold tracking-tight">アーカイブ見積もりシステム</h1>
+            <h1 className="text-xl font-bold tracking-tight">{SYSTEM_NAME}</h1>
             <p className="mt-1 text-sm text-slate-600">
               左のタブで、入力・指示書・見積・仕様・検査を切り替えます。計算ロジックは入力タブの条件に追随します。
             </p>
@@ -1252,10 +1507,101 @@ export default function App() {
                             </div>
 
                           </Card>
+                          <Card title="1.5) 発行者・採番（見積No／検査報告No／振込先／押印欄）">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="col-span-2">
+                                <div className="flex items-end gap-2">
+                                  <div className="flex-1">
+                                    <TextField
+                                      label="見積No"
+                                      value={data.quotationNo}
+                                      onChange={(v) => setData((p) => ({ ...p, quotationNo: v }))}
+                                      placeholder="例：KHQ-20260131-001"
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                    onClick={() => setData((p) => ({ ...p, quotationNo: allocateQuotationNo(p.issueDate) }))}
+                                  >
+                                    採番
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-600 hover:bg-slate-50"
+                                    onClick={() => setData((p) => ({ ...p, quotationNo: suggestQuotationNo(p.issueDate) }))}
+                                  >
+                                    候補に戻す
+                                  </button>
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  ※「採番」はローカル端末で日付ごとに通番を進めます（同一日付で 001 → 002 → ...）。
+                                </div>
+                              </div>
+
+                              <div className="col-span-2">
+                                <div className="flex items-end gap-2">
+                                  <div className="flex-1">
+                                    <TextField
+                                      label="検査報告No"
+                                      value={data.inspectionReportNo}
+                                      onChange={(v) => setData((p) => ({ ...p, inspectionReportNo: v }))}
+                                      placeholder="例：INSP-20260131-001"
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                    onClick={() => setData((p) => ({ ...p, inspectionReportNo: allocateInspectionReportNo(p.issueDate) }))}
+                                  >
+                                    採番
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-600 hover:bg-slate-50"
+                                    onClick={() => setData((p) => ({ ...p, inspectionReportNo: suggestInspectionReportNo(p.issueDate) }))}
+                                  >
+                                    候補に戻す
+                                  </button>
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  ※「採番」はローカル端末で日付ごとに通番を進めます（検査報告書も同様に 001 → 002 → ...）。
+                                </div>
+                              </div>
+
+                              <TextField label="発行者（会社名）" value={data.issuerOrg} onChange={(v) => setData((p) => ({ ...p, issuerOrg: v }))} />
+                              <TextField label="部署" value={data.issuerDept} onChange={(v) => setData((p) => ({ ...p, issuerDept: v }))} />
+                              <TextField label="代表者（任意）" value={data.issuerRep} onChange={(v) => setData((p) => ({ ...p, issuerRep: v }))} placeholder="例：代表取締役 ○○" />
+                              <TextField label="電話" value={data.issuerTel} onChange={(v) => setData((p) => ({ ...p, issuerTel: v }))} placeholder="例：03-0000-0000" />
+                              <div className="col-span-2">
+                                <TextField
+                                  label="住所"
+                                  value={data.issuerAddress}
+                                  onChange={(v) => setData((p) => ({ ...p, issuerAddress: v }))}
+                                  placeholder="〒000-0000 東京都○○区○○一丁目○番○号"
+                                />
+                              </div>
+
+                              <TextField label="振込先：銀行名" value={data.issuerBankName} onChange={(v) => setData((p) => ({ ...p, issuerBankName: v }))} placeholder="○○銀行" />
+                              <TextField label="振込先：支店" value={data.issuerBankBranch} onChange={(v) => setData((p) => ({ ...p, issuerBankBranch: v }))} placeholder="○○支店" />
+                              <TextField label="振込先：預金種別" value={data.issuerBankType} onChange={(v) => setData((p) => ({ ...p, issuerBankType: v }))} placeholder="普通 / 当座" />
+                              <TextField label="振込先：口座番号" value={data.issuerBankAccount} onChange={(v) => setData((p) => ({ ...p, issuerBankAccount: v }))} placeholder="0000000" />
+                              <div className="col-span-2">
+                                <TextField
+                                  label="振込先：口座名義"
+                                  value={data.issuerBankAccountName}
+                                  onChange={(v) => setData((p) => ({ ...p, issuerBankAccountName: v }))}
+                                  placeholder="カ）コクサイマイクロシャシンコウギョウシャ"
+                                />
+                              </div>
+                            </div>
+                          </Card>
 
                           <Card title="2) プランと検査">
-                            <div className="grid grid-cols-2 gap-3">
-                              <SelectField<Tier>
+                            <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-3">
+                              <div className="text-xs font-semibold text-slate-700">価格に最も影響する選択（プラン／検査）</div>
+                              <div className="mt-2 grid grid-cols-2 gap-3">
+                                <SelectField<Tier>
                                 label="プラン"
                                 value={data.tier}
                                 onChange={(v) => setData((p) => ({ ...p, tier: v }))}
@@ -1266,7 +1612,7 @@ export default function App() {
                                 ]}
                                 hint="単価は「基礎単価＋加算要素」を基に算出します。"
                               />
-                              <SelectField<InspectionLevel>
+                                <SelectField<InspectionLevel>
                                 label="検査レベル"
                                 value={data.inspectionLevel}
                                 onChange={(v) => setData((p) => ({ ...p, inspectionLevel: v }))}
@@ -1278,6 +1624,7 @@ export default function App() {
                                 ]}
                                 hint="検査レベルは単価に倍率として反映されます。"
                               />
+                              </div>
                             </div>
 
                             <div className="mt-3 grid grid-cols-2 gap-3">
@@ -1435,8 +1782,74 @@ export default function App() {
                             </div>
                           </Card>
 
+                          <Card title="5) 検査結果（提出用：合否・件数・再作業）">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <TextField
+                                label="検査実施日"
+                                value={data.inspectionDate}
+                                onChange={(v) => setData((p) => ({ ...p, inspectionDate: v }))}
+                                placeholder="YYYY-MM-DD"
+                              />
+                              <SelectField<Data["inspectionOverall"]>
+                                label="総合判定"
+                                value={data.inspectionOverall}
+                                onChange={(v) => setData((p) => ({ ...p, inspectionOverall: v }))}
+                                options={[
+                                  { value: "pass", label: "合格" },
+                                  { value: "conditional", label: "条件付合格（軽微不備あり）" },
+                                  { value: "fail", label: "不合格（再作業要）" },
+                                ]}
+                              />
+                              <NumberField
+                                label="不備件数"
+                                value={data.inspectionDefectCount}
+                                onChange={(v) => setData((p) => ({ ...p, inspectionDefectCount: Math.max(0, Math.floor(v)) }))}
+                                min={0}
+                                suffix="件"
+                              />
+                              <NumberField
+                                label="再作業件数"
+                                value={data.inspectionReworkCount}
+                                onChange={(v) => setData((p) => ({ ...p, inspectionReworkCount: Math.max(0, Math.floor(v)) }))}
+                                min={0}
+                                suffix="件"
+                              />
+                              <NumberField
+                                label="検査対象数量（合計）"
+                                value={data.inspectionCheckedQty}
+                                onChange={(v) => setData((p) => ({ ...p, inspectionCheckedQty: Math.max(0, Math.floor(v)) }))}
+                                min={0}
+                                suffix="件"
+                              />
+                              <div className="text-xs text-slate-600 leading-relaxed">
+                                検査表（提出用）では、この数値を冒頭サマリとして明示します。必要に応じて、検査対象数量は「合計ページ数」等へ読み替えてください。
+                              </div>
+                              <TextField
+                                label="検査担当者"
+                                value={data.inspectionInspector}
+                                onChange={(v) => setData((p) => ({ ...p, inspectionInspector: v }))}
+                                placeholder="例：担当 ○○"
+                              />
+                              <TextField
+                                label="承認者（任意）"
+                                value={data.inspectionApprover}
+                                onChange={(v) => setData((p) => ({ ...p, inspectionApprover: v }))}
+                                placeholder="例：責任者 ○○"
+                              />
+                              <div className="md:col-span-2">
+                                <TextAreaField
+                                  label="備考（検査結果・不備の概要）"
+                                  value={data.inspectionRemarks}
+                                  onChange={(v) => setData((p) => ({ ...p, inspectionRemarks: v }))}
+                                  rows={4}
+                                  placeholder="例：軽微な傾き補正の要否、再撮影対象の条件、メタデータ欠落の有無 など"
+                                />
+                              </div>
+                            </div>
+                          </Card>
+
                           <Card
-                            title="5) 対象資料（行ごとに単価が変わる）"
+                            title="6) 対象資料（行ごとに単価が変わる）"
                             right={<TinyButton label="＋行を追加" onClick={addWorkItem} kind="primary" />}
                           >
                             <div className="space-y-4">
@@ -1959,18 +2372,9 @@ export default function App() {
                   pages.push(
                     <DocPage
                       key="quotation"
-                      header={<DocHeader docTitle="御見積書" data={data} />}
+                      header={<EstimateCoverHeader data={data} totalAmount={calc.total} />}
                       footer={<DocFooter pageNo={no} totalPages={totalPages} />}
                     >
-                      <div className="mb-4 text-[12px] text-slate-800">
-                        <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-                          <div><span className="font-semibold">プラン：</span>{tierLabel(data.tier)}</div>
-                          <div><span className="font-semibold">検査：</span>{inspectionLabel(data.inspectionLevel)}</div>
-                          <div><span className="font-semibold">仕様レベル：</span>{specProfilePublicLabel(data.specProfile)}</div>
-                          <div><span className="font-semibold">税率：</span>{Math.round(data.taxRate * 100)}%</div>
-                        </div>
-                      </div>
-
                       <div className="text-sm font-semibold text-slate-900 mb-2">見積明細</div>
                       <LineItemTable items={calc.lineItems} />
 
@@ -1993,15 +2397,28 @@ export default function App() {
                         </table>
                       </div>
 
-                      <div className="mt-6 text-xs text-slate-700">
-                        <div className="font-semibold mb-1">注記</div>
-                        <ol className="list-decimal pl-5 space-y-1">
-                          <li>数量および作業範囲は、確定に伴い調整されることがあります。</li>
-                          <li>単価の算定根拠は、別紙「単価算定根拠（倍率・加算の積算）」にて示します。</li>
-                          <li>案件固定費の算定根拠は、別紙「案件固定費算定根拠（F0〜）」にて示します。</li>
-                          <li>価格は税抜表示とし、消費税を別途加算します。</li>
-                          <li>納品・検査・仕様の詳細は、別紙仕様書に従います。</li>
-                        </ol>
+                      <div className="mt-3 text-[11px] text-slate-800 leading-relaxed">
+                        <div>※上記見積には消費税が含まれます。</div>
+                        <div>※本見積書の内容は、お見積り日より1ヶ月間有効とします。</div>
+                      </div>
+
+                      <div className="mt-4 text-[11px] text-slate-800 leading-relaxed">
+                        <div className="font-semibold mb-1">備考</div>
+                        <div>☆保管環境：温度 10～30℃、湿度 80%RH以下</div>
+                        <div>
+                          ☆セキュリティ：施錠・暗証番号管理（個人の暗証番号を設定し、個人が責任をもって管理します）
+                        </div>
+                        <div>
+                          ☆運搬：弊社便または宅配便を利用して（運搬時は原稿資料の各箱単位を封印し、運搬します）
+                        </div>
+                        {data.notes ? <div className="mt-1">その他：{data.notes}</div> : null}
+                      </div>
+
+                      <div className="mt-3 text-[11px] text-slate-800 leading-relaxed">
+                        <div className="font-semibold mb-1">当社の作業体制</div>
+                        <div>・本作業は当社の工程管理手順に基づき、受付・撮影・補正・メタデータ・検査・納品の各工程を記録しながら進行します。</div>
+                        <div>・検査の詳細、納品媒体、フォルダ構成、ログ、メタデータ等は、別紙仕様書に従います。</div>
+                        <div>・検査記録は、後日確認可能な形式で保管します。</div>
                       </div>
                     </DocPage>
                   );
@@ -2283,30 +2700,23 @@ export default function App() {
                   return pages.map((chunk, idx) => (
                     <DocPage
                       key={`spec-${idx}`}
-                      header={<DocHeader docTitle={`仕様書（${specProfilePublicLabel(data.specProfile)}）`} data={data} />}
-                      footer={
-                        <DocFooter
-                          pageNo={idx + 1}
-                          totalPages={total}
-                          note="本書は、入力条件に基づく仕様書（ドラフト）である。"
-                        />
-                      }
+                      header={null}
+                      footer={<DocFooter pageNo={idx + 1} totalPages={total} note="" />}
                     >
                       {idx === 0 ? (
-                        <div className="mb-4 text-sm leading-relaxed">
-                          <div>宛先：{data.clientName || "（未入力）"} 御中</div>
-                          <div>作成者：株式会社◯◯　総務部</div>
-                          <div>件名：{data.projectName || "（未入力）"}　仕様書</div>
-                          <div>仕様レベル：{specProfilePublicLabel(data.specProfile)}</div>
-                          <div>
-                            発行日：{data.issueDate || "—"} ／ 納期：{data.dueDate || "—"}
+                        <div className="mb-4">
+                          <div className="text-center text-lg font-semibold tracking-wide">仕様書</div>
+                          <div className="mt-2 text-xs leading-relaxed text-slate-800">
+                            <div>案件名：{data.projectName || "—"}</div>
+                            <div>仕様レベル：{specProfilePublicLabel(data.specProfile)}</div>
+                            <div>発行日：{data.issueDate || "—"}</div>
                           </div>
                         </div>
                       ) : null}
 
                       <div className="space-y-4">
                         {chunk.map((s, i) => (
-                          <section key={`${s.title}-${i}`}>
+                          <section key={`${s.title}-${i}`} className="break-inside-avoid">
                             <div className="font-semibold">{s.title}</div>
                             <div className="mt-1 whitespace-pre-line text-sm leading-relaxed text-slate-800">
                               {s.body}
@@ -2323,55 +2733,97 @@ export default function App() {
             {view === "inspection" ? (
               <div className="space-y-4">
                 {data.includeInspectionDoc ? (
-                  <Page title="検査表（内部用）">
-                    <div className="space-y-4">
-                      <div className="rounded-lg border border-slate-200 bg-white p-3">
-                        <div className="text-xs font-semibold text-slate-700">検査方式</div>
-                        <div className="mt-2 space-y-1 text-sm text-slate-900">
-                          <div>標準: {specProfileLabel(data.specProfile)}</div>
-                          <div>検査: {specFlags.fullInspection ? "全数検査" : inspectionLabel(data.inspectionLevel)}</div>
-                          <div>媒体要件: {specFlags.requireMedia ? "必須" : "任意"}</div>
-                          <div>メタデータ: {specFlags.requireMetadata ? "必須" : "任意"}</div>
+                  <div className="space-y-4">
+                    <DocPage
+                      header={<DocHeader docTitle="検査結果報告書" data={data} />}
+                      footer={<DocFooter pageNo={1} totalPages={1} note="" />}
+                    >
+                      <div className="mb-4 text-sm leading-relaxed text-slate-800">
+                        <div className="text-base font-semibold tracking-wide">検査結果報告書</div>
+                        <div className="mt-2">
+                          <div>顧客名：{data.clientName || "—"}</div>
+                          <div>案件名：{data.projectName || "—"}</div>
+                          <div>検査レベル：{specFlags.fullInspection ? "厳格（全数検査）" : `標準（${inspectionLabel(data.inspectionLevel)}）`}</div>
+                          <div>見積No：{quotationNo || "—"}</div>
+                          <div>検査報告No：{inspectionReportNo || "—"}</div>
+                          <div>検査実施日：{formatJPDate(data.inspectionDate)}</div>
+                          <div>
+                            総合判定：{inspectionOverallLabel(data.inspectionOverall)}　/　不備件数：{Math.max(0, data.inspectionDefectCount)}　/　再作業件数：{Math.max(0, data.inspectionReworkCount)}
+                          </div>
+                          <div>発行日：{formatJPDate(data.issueDate)}</div>
                         </div>
                       </div>
 
-                      <div className="rounded-lg border border-slate-200 bg-white p-3">
-                        <div className="text-xs font-semibold text-slate-700">検査チェックリスト（例）</div>
-                        <div className="mt-2 overflow-x-auto">
-                          <table className="min-w-full text-sm">
-                            <thead>
-                              <tr className="text-left text-xs text-slate-500">
-                                <th className="py-2 pr-3">項目</th>
-                                <th className="py-2 pr-3">判定基準</th>
-                                <th className="py-2 pr-3">結果</th>
-                                <th className="py-2">備考</th>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                          <thead>
+                            <tr className="border-b text-left text-xs text-slate-600">
+                              <th className="py-2 pr-3 w-10">No</th>
+                              <th className="py-2 pr-3">検査項目</th>
+                              <th className="py-2 pr-3">判定基準</th>
+                              <th className="py-2 pr-3 w-36">結果</th>
+                              <th className="py-2">備考</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200">
+                            {[
+                              ["画像欠落", "欠落0件"],
+                              ["傾き/天地", "許容範囲内"],
+                              ["解像度/色", "指定プロファイル準拠"],
+                              ["ファイル名規則", "命名規則どおり"],
+                              ["フォルダ構成", "指定構成どおり"],
+                              ["ログ/チェックサム", "記録整合／一致"],
+                              ["メタデータ", specFlags.requireMetadata ? "必須項目の欠落なし" : "提供分のみ（任意）"],
+                              ["媒体格納", specFlags.requireMedia ? "媒体要件準拠" : "任意"],
+                            ].map(([item, criteria], i) => (
+                              <tr key={i} className="align-top">
+                                <td className="py-2 pr-3 text-slate-700 tabular-nums">{i + 1}</td>
+                                <td className="py-2 pr-3 font-medium text-slate-900">{item}</td>
+                                <td className="py-2 pr-3 text-slate-700">{criteria}</td>
+                                <td className="py-2 pr-3 text-slate-700">□適合　□不適合</td>
+                                <td className="py-2 text-slate-600">—</td>
                               </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {[
-                                ["画像欠落", "0件（全数）"],
-                                ["傾き/天地", "許容範囲内"],
-                                ["解像度/色", "指定プロファイル準拠"],
-                                ["ファイル名規則", "規則どおり"],
-                                ["メタデータ", specFlags.requireMetadata ? "必須項目の欠落なし" : "任意（提供分のみ）"],
-                                ["媒体格納", specFlags.requireMedia ? "媒体要件準拠" : "任意"],
-                              ].map(([item, criteria], i) => (
-                                <tr key={i} className="align-top">
-                                  <td className="py-2 pr-3 font-medium text-slate-900">{item}</td>
-                                  <td className="py-2 pr-3 text-slate-700">{criteria}</td>
-                                  <td className="py-2 pr-3 text-slate-500">□OK / □NG</td>
-                                  <td className="py-2 text-slate-500">—</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="mt-6 border border-slate-300 p-3 text-sm text-slate-800">
+                        <div className="font-semibold mb-1">検査所見（特記事項）</div>
+                        <div className="text-xs text-slate-600">
+                          - 基準に満たない項目がある場合は、修正依頼・再検査の要否を明記してください。
+                          <br />
+                          - 重大な不備がある場合は、総合判定を「不合格」とし、再作業・再検査を実施してください。
                         </div>
-                        <div className="mt-3 text-xs text-slate-500">
-                          注: 「全数検査」「媒体要件」「メタデータ必須項目」が規格化されている案件では、入力UIで「厳格」を選択し、各スイッチ（全数検査／媒体要件／メタデータ必須項目）をONにすることで、仕様書・検査書の本文に反映されます。
+                        <div className="mt-2 whitespace-pre-wrap text-sm">
+                          {data.inspectionRemarks && data.inspectionRemarks.trim().length > 0
+                            ? data.inspectionRemarks
+                            : "（記入欄）\n\n\n\n"}
                         </div>
                       </div>
-                    </div>
-                  </Page>
+
+                      <div className="mt-8 grid grid-cols-3 gap-6 text-sm text-slate-800">
+                        <div>
+                          <div className="border-t pt-2">
+                            検査担当：{data.inspectionInspector || `${issuer.dept}（担当）`}
+                            <InlineSealBox />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="border-t pt-2">
+                            承認：{data.inspectionApprover || "＿＿＿＿＿＿"}
+                            <InlineSealBox />
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="border-t pt-2">
+                            顧客確認：＿＿＿＿＿＿
+                            <InlineSealBox />
+                          </div>
+                        </div>
+                      </div>
+                    </DocPage>
+                  </div>
                 ) : (
                   <Card title="検査表（出力OFF）">
                     <div className="text-sm text-slate-700">入力画面の「出力対象」で「検査」をONにすると、このタブに検査表が生成されます。</div>
