@@ -236,10 +236,11 @@ export default function App() {
     ],
 
     // 初期データ（実費）
+    // NOTE: 型定義変更(calcType, note)に対応
     miscExpenses: [
-      { id: uid("m"), label: "外付けHDD（実費）", qty: 1, unit: "式", unitPrice: 0, amount: 0, notes: "" },
-      { id: uid("m"), label: "保存箱（実費）", qty: 1, unit: "式", unitPrice: 0, amount: 0, notes: "" },
-      { id: uid("m"), label: "中性紙封筒・ラベル等（実費）", qty: 1, unit: "式", unitPrice: 0, amount: 0, notes: "" },
+      { id: uid("m"), calcType: "expense", label: "外付けHDD（実費）", qty: 1, unit: "式", unitPrice: 0, amount: 0, note: "" },
+      { id: uid("m"), calcType: "expense", label: "保存箱（実費）", qty: 1, unit: "式", unitPrice: 0, amount: 0, note: "" },
+      { id: uid("m"), calcType: "expense", label: "中性紙封筒・ラベル等（実費）", qty: 1, unit: "式", unitPrice: 0, amount: 0, note: "" },
     ],
 
     taxRate: 0.1,
@@ -306,7 +307,8 @@ export default function App() {
   const addMiscExpense = () => {
     setData((p) => ({
       ...p,
-      miscExpenses: [...p.miscExpenses, { id: uid("m"), label: "特殊工程（自由入力）", qty: 1, unit: "式", unitPrice: 0, amount: 0, notes: "" }],
+      // NOTE: 型定義変更(calcType, note)に対応
+      miscExpenses: [...p.miscExpenses, { id: uid("m"), calcType: "manual", label: "特殊工程（自由入力）", qty: 1, unit: "式", unitPrice: 0, amount: 0, note: "" }],
     }));
   };
 
