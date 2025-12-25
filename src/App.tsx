@@ -144,12 +144,7 @@ type Data = {
   // 備品実費等（自由入力）
   miscExpenses: MiscExpense[];
 
-  
-  // 固定費（案件単位）の摘要補足（見積書の薄字説明として表示）
-  setupFeeNote: string;
-  managementFeeNote: string;
-
-// 税率（日本の原則を初期値として 10%）
+  // 税率（日本の原則を初期値として 10%）
   taxRate: number; // 0.10 = 10%
 };
 
@@ -536,7 +531,7 @@ function computeCalc(data: Data): CalcResult {
   lineItems.push({
     kind: "fixed",
     label: "初期セットアップ費",
-    note: data.setupFeeNote?.trim() ? data.setupFeeNote.trim() : undefined,
+    note: (data.setupFeeNote || "").trim() || undefined,
     qty: 1,
     unit: "式",
     unitPrice: fixed.setup,
@@ -545,7 +540,7 @@ function computeCalc(data: Data): CalcResult {
   lineItems.push({
     kind: "fixed",
     label: "進行管理・品質管理費",
-    note: data.managementFeeNote?.trim() ? data.managementFeeNote.trim() : undefined,
+    note: (data.managementFeeNote || "").trim() || undefined,
     qty: 1,
     unit: "式",
     unitPrice: fixed.management,
@@ -1399,10 +1394,6 @@ export default function App() {
     dueDate: "",
     notes: "",
 
-    // 固定費（案件単位）の摘要補足（見積書の薄字説明）
-    setupFeeNote: "要件確認・仕様確定（命名規則／フォルダ構成／メタデータ項目の確定）、作業設計、媒体・環境準備等",
-    managementFeeNote: "進捗管理、工程内是正の差戻し管理、品質レビュー、問い合わせ対応、納品前最終確認・証跡整理等",
-
     tier: "economy",
 
     includeQuotation: true,
@@ -1500,7 +1491,10 @@ export default function App() {
     ],
 
     taxRate: 0.1,
-  }));
+  
+      setupFeeNote: \"案件要件の確認、納品フォルダ構成・命名規則の確定、帳票テンプレートの初期化、作業環境・セキュリティ設定（媒体・暗号化方針等）\",
+      managementFeeNote: \"進行管理（工程管理・品質基準の適用・顧客窓口）、品質管理（検査計画・是正指示・再作業管理）、納品前チェック・記録の取りまとめ\",
+}));
   const [view, setView] = useState<ViewKey>("input");
 
   // 見積No・検査報告Noは、空であれば候補値を自動で入れる（確定採番は「採番」ボタンで行う）
@@ -2304,57 +2298,7 @@ export default function App() {
                             )}
                           </Card>
 
-                          <Card 
-                          <Card
-                            title="8) 案件固定費（初期セットアップ／進行管理）"
-                            tone="amber"
-                            subtitle="固定費の金額はプランに連動します。摘要の薄字補足（説明文）を編集できます（見積書にも反映）。"
-                          >
-                            {(() => {
-                              const fixed = PROJECT_FIXED_FEES[data.tier];
-                              return (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <div className="rounded-xl border bg-white p-3">
-                                    <div className="flex items-center justify-between">
-                                      <div className="text-sm font-semibold text-slate-900">F0 初期セットアップ費</div>
-                                      <div className="text-sm font-semibold tabular-nums">{fmtJPY(fixed.setup)}</div>
-                                    </div>
-                                    <div className="mt-2">
-                                      <TextAreaField
-                                        label="摘要の補足（薄字で表示）"
-                                        value={data.setupFeeNote}
-                                        onChange={(v) => setData((p) => ({ ...p, setupFeeNote: v }))}
-                                        rows={3}
-                                        placeholder="例：要件確認・仕様確定、作業設計、媒体・環境準備 等"
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <div className="rounded-xl border bg-white p-3">
-                                    <div className="flex items-center justify-between">
-                                      <div className="text-sm font-semibold text-slate-900">F1 進行管理・品質管理費</div>
-                                      <div className="text-sm font-semibold tabular-nums">{fmtJPY(fixed.management)}</div>
-                                    </div>
-                                    <div className="mt-2">
-                                      <TextAreaField
-                                        label="摘要の補足（薄字で表示）"
-                                        value={data.managementFeeNote}
-                                        onChange={(v) => setData((p) => ({ ...p, managementFeeNote: v }))}
-                                        rows={3}
-                                        placeholder="例：進捗管理、差戻し管理、品質レビュー、納品前確認 等"
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })()}
-
-                            <div className="mt-2 text-xs text-slate-500">
-                              ※ 金額はプランに連動して自動計算されます。ここで編集するのは「摘要の補足（説明文）」のみです。
-                            </div>
-                          </Card>
-
-title="9) 概算合計（税抜・税込）" tone="slate" subtitle="入力内容の概算（見積書の自動計算結果）">
+                          <Card title="8) 概算合計（税抜・税込）" tone="slate" subtitle="入力内容の概算（見積書の自動計算結果）">
                             <div className="grid grid-cols-3 gap-3">
                               <div className="rounded-xl border bg-white p-3">
                                 <div className="text-xs text-slate-600">小計（税抜）</div>
