@@ -1033,11 +1033,11 @@ function issuerFromData(d: Data) {
     fax: ISSUER.fax,
     contactPerson: d.issuerContactPerson || ISSUER.contactPerson,
     contactEmail: d.issuerContactEmail || ISSUER.contactEmail,
-    bankName: d.bankName || ISSUER.bankName,
-    bankBranch: d.bankBranch || ISSUER.bankBranch,
-    bankType: d.bankType || ISSUER.bankType,
-    bankAccount: d.bankAccount || ISSUER.bankAccount,
-    bankAccountName: d.bankAccountName || ISSUER.bankAccountName,
+    bankName: d.issuerBankName || ISSUER.bankName,
+    bankBranch: d.issuerBankBranch || ISSUER.bankBranch,
+    bankType: d.issuerBankType || ISSUER.bankType,
+    bankAccount: d.issuerBankAccount || ISSUER.bankAccount,
+    bankAccountName: d.issuerBankAccountName || ISSUER.bankAccountName,
   };
 }
 
