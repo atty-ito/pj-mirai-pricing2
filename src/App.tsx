@@ -190,6 +190,15 @@ function toMoney(v: string, fallback = 0) {
   return Math.max(0, Math.round(n));
 }
 
+
+function num(n: number) {
+  if (!Number.isFinite(n)) return "0";
+  const s = n % 1 === 0 ? String(Math.round(n)) : String(n);
+  const [i, d] = s.split(".");
+  const head = i.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return d ? `${head}.${d}` : head;
+}
+
 function fmtJPY(n: number) {
   const sign = n < 0 ? "-" : "";
   const v = Math.abs(Math.round(n));
@@ -523,9 +532,9 @@ function buildSpecSections(data: Data): SpecSection[] {
   const workItemSummary = data.workItems
     .map(
       (w) =>
-        `- ${w.title}：数量 ${num(w.qty)} ${w.unit}／${sizeClassLabel(w.sizeClass)}／${colorModeLabel(w.colorMode)}／${dpiLabel(
+        `- ${w.title}：数量 ${num(w.qty)} ${w.unit}／${sizeLabel(w.sizeClass)}／${colorModeLabel(w.colorMode)}／${dpiLabel(
           w.dpi,
-        )}／形式 ${w.formats.join("・")}／OCR ${w.ocr ? "有" : "無"}／メタデータ ${metadataLevelLabel(w.metadataLevel)}／取扱 ${handlingLabel(
+        )}／形式 ${w.formats.join("・")}／OCR ${w.ocr ? "有" : "無"}／メタデータ ${metadataLabel(w.metadataLevel)}／取扱 ${handlingLabel(
           w.handling,
         )}`,
     )
@@ -1122,7 +1131,6 @@ export default function App() {
   );
 
 
-  const specSections = useMemo(() => buildSpecSections(data), [data]);
 
   // ---- UI操作 ----
   const addWorkItem = () => {
