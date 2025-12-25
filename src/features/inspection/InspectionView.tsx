@@ -2,7 +2,9 @@ import { Data } from "../../types/pricing";
 import { 
   formatJPDate, 
   suggestInspectionReportNo, 
-  allocateInspectionReportNo 
+  allocateInspectionReportNo,
+  inspectionLabel,
+  specProfilePublicLabel
 } from "../../utils/formatters";
 import { Card } from "../../components/common/Card";
 import { TextField } from "../../components/common/TextField";
@@ -17,9 +19,6 @@ type Props = {
   setData: React.Dispatch<React.SetStateAction<Data>>;
 };
 
-/**
- * 検査判定のラベル変換
- */
 function getOverallLabel(v: Data["inspectionOverall"]) {
   if (v === "pass") return "合格";
   if (v === "conditional") return "条件付合格";
@@ -30,10 +29,22 @@ export function InspectionView({ data, setData }: Props) {
   const inspectionIssueDate = data.inspectionIssueDate || data.issueDate;
   const inspectionReportNo = data.inspectionReportNo || suggestInspectionReportNo(inspectionIssueDate);
 
-  // 仕様フラグの判定（帳票内の基準表示に使用）
+  // 仕様フラグの判定
   const requireMetadata = data.specProfile === "gunma" ? data.gunmaMetadataMandatory : data.specProfile === "ndl";
   const requireMedia = data.specProfile === "gunma" ? data.gunmaMediaRequirements : data.specProfile === "ndl";
   const isFullInspection = data.specProfile === "gunma" ? data.gunmaAllInspection : (data.inspectionLevel === "full" || data.inspectionLevel === "double_full");
+
+  // 検査項目リスト（元のApp.tsxから完全復元）
+  const inspectionItems = [
+    ["画像欠落", "画像番号の連続性・欠落0件"],
+    ["傾き/天地", "許容範囲内（仕様書準拠）"],
+    ["解像度/色", "指定プロファイル・dpi準拠"],
+    ["ファイル名規則", "命名規則どおり"],
+    ["フォルダ構成", "指定構成どおり"],
+    ["ログ/チェックサム", "記録整合／チェックサム一致"],
+    ["メタデータ", requireMetadata ? "必須項目の完全性（欠落なし）" : "基本項目の整合性"],
+    ["媒体格納", requireMedia ? "媒体要件準拠・ウイルスチェック" : "指定媒体への格納"],
+  ];
 
   return (
     <div className="space-y-4">
@@ -100,6 +111,7 @@ export function InspectionView({ data, setData }: Props) {
           <div className="space-y-2">
             <div><span className="font-semibold">顧客名：</span>{data.clientName} 御中</div>
             <div><span className="font-semibold">案件名：</span>{data.projectName}</div>
+            <div><span className="font-semibold">仕様レベル：</span>{specProfilePublicLabel(data.specProfile)}</div>
           </div>
           <div className="text-right space-y-1">
             <div>報告No：{inspectionReportNo}</div>
@@ -115,7 +127,7 @@ export function InspectionView({ data, setData }: Props) {
             <div className="text-sm space-y-1">
               <div>不備件数：{data.inspectionDefectCount} 件</div>
               <div>再作業数：{data.inspectionReworkCount} 件</div>
-              <div>検査レベル：{isFullInspection ? "全数検査" : "抜取検査"}</div>
+              <div>検査レベル：{isFullInspection ? "全数検査" : `標準（${inspectionLabel(data.inspectionLevel)}）`}</div>
             </div>
           </div>
         </div>
@@ -129,21 +141,17 @@ export function InspectionView({ data, setData }: Props) {
                 <th className="border p-2">検査項目</th>
                 <th className="border p-2">判定基準</th>
                 <th className="border p-2 w-32 text-center">結果</th>
+                <th className="border p-2">備考</th>
               </tr>
             </thead>
             <tbody>
-              {[
-                ["画像欠落", "画像番号の連続性・欠落0件"],
-                ["画質確認", "傾き、欠け、ピンぼけ、露出等"],
-                ["ファイル名", "指定命名規則への準拠"],
-                ["メタデータ", requireMetadata ? "必須項目の完全性" : "基本項目の整合性"],
-                ["媒体格納", requireMedia ? "媒体要件・チェックサム一致" : "指定媒体への格納"],
-              ].map(([item, criteria], i) => (
+              {inspectionItems.map(([item, criteria], i) => (
                 <tr key={i}>
                   <td className="border p-2 text-center">{i + 1}</td>
                   <td className="border p-2 font-semibold">{item}</td>
                   <td className="border p-2 text-slate-600">{criteria}</td>
-                  <td className="border p-2 text-center text-slate-400">□適合 / □不適合</td>
+                  <td className="border p-2 text-center text-slate-700">□適合 / □不適合</td>
+                  <td className="border p-2 text-slate-400">—</td>
                 </tr>
               ))}
             </tbody>
@@ -153,7 +161,7 @@ export function InspectionView({ data, setData }: Props) {
         <div className="flex-1 border p-4 rounded mb-10">
           <div className="text-sm font-bold mb-2">3. 検査所見・特記事項</div>
           <div className="text-sm leading-relaxed whitespace-pre-wrap min-h-[100px]">
-            {data.inspectionRemarks || "特記事項なし。"}
+            {data.inspectionRemarks || "（特記事項なし）"}
           </div>
         </div>
 
