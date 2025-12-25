@@ -5,7 +5,7 @@ import { useMemo, useState, type ReactNode } from "react";
  * 単一ファイルで動く「見積＋内部計算＋仕様書」アプリ。
  * - コンパイルが通ることを最優先（未使用importなし、TSの到達不能警告なし）。
  * - 3プラン（Economy / Standard / Premium）
- * - 「NDL準拠／群馬仕様」など、仕様書の“規格スイッチ”を入力UIで再現
+ * - 「詳細／厳格」など、仕様書の“規格スイッチ”を入力UIで再現
  * - 備品実費等（自由入力の品目＋金額）を見積に反映
  * - チェックボックスと単価計算が連動し、行ごとに「参考単価」を即時表示
  */
@@ -15,7 +15,7 @@ type SpecProfile = "standard" | "ndl" | "gunma";
 
 type InspectionLevel = "none" | "sample" | "full" | "double_full";
 
-type SizeClass = "A4以下" | "A3" | "A2" | "A1" | "A0" | "図面特大";
+type SizeClass = "A4以下" | "A3" | "A2" | "A2以上" | "A1" | "A0" | "図面特大";
 type ColorMode = "mono" | "gray" | "color";
 type Dpi = 300 | 400 | 600;
 type MetadataLevel = "none" | "basic" | "rich";
@@ -59,6 +59,8 @@ type Data = {
   includeQuotation: boolean;
   includePriceRationalePage: boolean;
   includeFixedCostRationalePage: boolean;
+  // 顧客提出用：単価・固定費のパラメータ表（別紙）を同梱
+  includeParameterTables: boolean;
   includeInternalCalc: boolean;
   includeSpecDoc: boolean;
   includeInstructionDoc: boolean;
@@ -66,7 +68,7 @@ type Data = {
 
   // 仕様スイッチ
   specProfile: SpecProfile; // standard / ndl / gunma
-  // 群馬仕様で「入力UI上のスイッチ」として再現する論点
+  // 厳格で「入力UI上のスイッチ」として再現する論点
   gunmaAllInspection: boolean;
   gunmaMediaRequirements: boolean;
   gunmaMetadataMandatory: boolean;
@@ -109,6 +111,7 @@ const SIZE_ADDER: Record<SizeClass, number> = {
   A4以下: 0,
   A3: 4,
   A2: 14,
+  A2以上: 14,
   A1: 30,
   A0: 55,
   図面特大: 85,
@@ -215,9 +218,9 @@ function deriveSpecFlags(d: Data) {
 }
 
 function specProfileLabel(p: SpecProfile) {
-  if (p === "standard") return "標準（簡易）";
-  if (p === "ndl") return "NDL準拠（詳細）";
-  return "群馬仕様（厳格）";
+  if (p === "standard") return "標準";
+  if (p === "ndl") return "詳細";
+  return "厳格";
 }
 
 function inspectionLabel(lv: InspectionLevel) {
@@ -509,146 +512,179 @@ type SpecSection = { title: string; body: string };
 
 
 function buildSpecSections(data: Data): SpecSection[] {
-  const profile = data.specProfile;
+  const profile = data.specProfile; // internal key only
   const flags = deriveSpecFlags(data);
+  const level = specProfilePublicLabel(profile); // 標準／詳細／厳格（表示用）
 
   const sections: SpecSection[] = [];
-  let n = 1;
-  const push = (label: string, body: string) => {
-    sections.push({ title: `${n}. ${label}`, body });
-    n += 1;
-  };
+  const push = (title: string, bodyLines: string[]) => sections.push({ title, body: bodyLines.join("\n") });
 
-  push(
-    "目的・範囲",
-    "本仕様書は、対象資料のデジタル化（撮影・補正・データ作成）および納品要件について、受託者が遵守すべき基準を定めるものである。"
-  );
+  const hasAny = (s: string) => (s ?? "").trim().length > 0;
+  const workItemSummary = data.workItems
+    .map(
+      (w) =>
+        `- ${w.title}：数量 ${num(w.qty)} ${w.unit}／${sizeClassLabel(w.sizeClass)}／${colorModeLabel(w.colorMode)}／${dpiLabel(
+          w.dpi,
+        )}／形式 ${w.formats.join("・")}／OCR ${w.ocr ? "有" : "無"}／メタデータ ${metadataLevelLabel(w.metadataLevel)}／取扱 ${handlingLabel(
+          w.handling,
+        )}`,
+    )
+    .join("\n");
 
-  push(
-    "対象資料・数量",
-    data.workItems.length === 0
-      ? "対象範囲は別途協議により確定する。"
-      : data.workItems
-          .map((w, i) => {
-            const formats = w.formats.map((f) => formatLabel(f)).join(", ");
-            return `${i + 1}. ${w.title || "（無題）"}：${Math.max(0, w.qty).toLocaleString()}${w.unit}（${sizeLabel(w.sizeClass)} / ${colorModeLabel(w.colorMode)} / ${dpiLabel(
-              w.dpi
-            )} / 形式:${formats || "—"} / OCR:${w.ocr ? "あり" : "なし"} / メタデータ:${metadataLabel(w.metadataLevel)}）`;
-          })
-          .join("\n")
-  );
+  // 1 目的・範囲
+  push("1. 目的・適用範囲", [
+    "本書は、本案件におけるデジタルデータ作成（撮影・スキャン、画像処理、メタデータ作成、検査、納品）に関する仕様を定める。",
+    `仕様レベルは「${level}」である。仕様レベルに応じて、記述の粒度、検査強度、媒体要件、メタデータ要件が変化する。`,
+    "本書はドラフトであり、対象資料・数量・要件が確定した時点で最終化する。",
+  ]);
 
-  push(
-    "作業体制",
-    [
-      "・工程責任者を置き、作業計画・進捗・品質の統括を行う。",
-      "・作業者は命名規則・取扱手順・補正基準を事前に共有し、工程内で逸脱が出ないよう運用する。",
-      profile === "ndl" || profile === "gunma"
-        ? "・仕様準拠（NDL／群馬）の場合、メタデータ整合・媒体要件・ログ保全の観点で、レビュー工程を追加する。"
-        : "・標準（簡易）の場合も、最低限の品質確認（欠落・破損・判読不能等の検知）を実施する。",
-    ].join("\n")
-  );
+  // 2 対象と成果物
+  push("2. 対象・成果物", [
+    "対象資料および成果物（行アイテム）は、入力情報に基づき次のとおりである。",
+    workItemSummary || "（行アイテム未設定）",
+    "成果物は原則として、(i) 保存用（マスター）と (ii) 利用用（閲覧・配布用）に区分し、必要に応じてメタデータおよびログを付す。",
+  ]);
 
-  push(
-    "作業工程",
-    [
-      "1) 受入・棚卸・前処理（資料状態の確認、通番/ラベル付与）",
-      "2) 撮影・スキャン（解像度・色設定に従う）",
-      "3) 画像補正（傾き補正、トリミング、必要に応じた軽微な濃度補正）",
-      "4) データ生成（指定形式：TIFF/PDF/PDF-A/JPEG等）",
-      "5) メタデータ作成（仕様に応じて必須項目を作成）",
-      "6) 検査（抜取／全数／二重等。検査表により記録）",
-      "7) 納品データ作成（フォルダ構成、命名規則、チェックサム等）",
-      "8) 納品・受入確認・是正（必要時）",
-    ].join("\n")
-  );
+  // 3 画像作成（基本）
+  push("3. 画像作成の基本要件", [
+    "各画像は、文字可読性と将来再利用性の双方を満たすよう作成する。",
+    "撮影・スキャン時は、傾き、天地逆、欠け、ピンぼけ、露出過不足、反射・写り込み、モアレ、偽色、ノイズ、歪み等が生じないよう留意する。",
+    "裁断の有無、非裁断資料の開き角、背割れ等、物理的制約が画質に影響する場合は、無理な矯正を避け、別途ログに記録する（9章）。",
+  ]);
 
-  // --- 追加：納品構成・命名規則（不足しがちな実務記述を厚くする）
-  push(
-    "納品データ構成・命名規則",
-    [
-      "【基本方針】",
-      "・納品データは、原則として「保存用（master）」「閲覧用（access）」「メタデータ（metadata）」「ログ・証跡（log）」の階層構造で管理する。",
-      "・命名は、通番の一意性を担保し、後工程（検索・突合・監査）に耐える形式とする。",
-      "",
-      "【例：フォルダ構成】",
-      "・/master/  … 保存用TIFF等（非圧縮想定）",
-      "・/access/  … 閲覧用PDF/PDF-A/JPEG等",
-      "・/metadata/ … メタデータCSV/TSV/XML等",
-      "・/log/     … 検査表、是正履歴、チェックサム一覧等（プレミアム／厳格時）",
-      "",
-      "【例：命名規則（通番）】",
-      "・（案件ID）_（資料ID）_（通番5桁）.tif  例：PJ001_DOC01_00001.tif",
-      "・同一資料内で通番は欠番を作らない。欠番が生じる場合は理由をログへ記録する。",
-      "",
-      flags.requireMedia ? "【媒体・完全性】\n・チェックサム（例：SHA-256）一覧を作成し、納品媒体内に同梱する。" : "【媒体・完全性】\n・必要に応じ、チェックサム等の完全性手当を協議する。",
-      "・色管理が必要な場合（カラー/高精細等）は、ICCプロファイルの埋込または別添を行う。",
-    ].join("\n")
-  );
-
-  push(
-    "品質基準・検査",
-    [
-      "・欠落（ページ抜け）、重複、判読不能、極端な傾き、過度のトリミング欠落を不適合とする。",
-      flags.fullInspection ? "・検査は全数を原則とする。" : "・検査は抜取を基本とし、リスクに応じて全数へ移行する。",
-      data.tier === "premium" || profile === "gunma"
-        ? "・是正（再撮影・補正）を工程内で閉じる運用を前提とし、是正履歴を残す。"
-        : "・軽微な是正（傾き等）は工程内で対応し、重大なものは協議により判断する。",
-    ].join("\n")
-  );
-
-  push(
-    profile === "ndl" || profile === "gunma" ? "メタデータ（NDL／厳格）" : "メタデータ（任意）",
-    [
-      flags.requireMetadata
-        ? "・メタデータは必須。項目群、型、必須/任意、整合規則（例：日付形式、コード体系）を定め、不整合は不合格扱いとする。"
-        : "・メタデータは任意。必要時に、基本項目（例：資料名、通番、作成年、備考等）を作成する。",
-      "・メタデータと画像の突合（通番一致、件数一致）を実施する。",
-      "・納品形式は、CSV/TSV/XML等、発注者要件に従う。",
-    ].join("\n")
-  );
-
-  if (profile === "gunma" && data.gunmaMediaRequirements) {
-    push(
-      "媒体要件（群馬）",
-      [
-        "・納品媒体は、発注者指定に従う（外付けHDD/SSD等）。",
-        "・媒体ラベル（案件名・媒体番号・作成日）を付し、封緘・輸送手配までを行う。",
-        "・チェックサム一覧を同梱し、受入側で検証可能な状態とする。",
-      ].join("\n")
+  // 4 トリミング・余白・見開き等（詳細／厳格で増補）
+  const trimLines = [
+    "トリミングは、原則として資料の外周を欠かさず取得しつつ、不要な余白を過度に残さない。",
+    "標準では、軽微な傾き補正・余白調整に留め、内容改変に該当する補正は行わない。",
+  ];
+  if (profile !== "standard") {
+    trimLines.push(
+      "詳細以上では、トリミング倍率（例：110%）等の運用ルールを定め、見開き・折込・大判を含む場合でも一貫した外周取得を行う。",
+      "見開きや横長ページは、判型に応じて「1画像（見開き）」「左右分割」のいずれかを採用し、採用方式はログに記録する。",
     );
   }
+  push("4. トリミング・判型・特殊ページ", trimLines);
 
-  push(
-    "情報管理",
-    [
-      "・作業データはアクセス制御された環境で保管し、不要な複製を作らない。",
-      data.tier === "premium" || profile === "gunma"
-        ? "・監査可能なログ（アクセス、持出、是正履歴）を保持する。"
-        : "・必要に応じ、作業記録（担当/日付/是正有無）を残す。",
-      "・納品後、保存期間・廃棄（消去）方針は契約・協議により定める。",
-    ].join("\n")
-  );
-
-  push(
-    "受入・納品・是正",
-    [
-      "・納品前に件数一致、フォルダ構成、命名規則の適合を確認する。",
-      "・受入後に不適合が見つかった場合は、是正手順（再撮影/差替/ログ記録）に従い対応する。",
-      "・仕様変更（例：OCR追加、メタデータ項目追加）が発生した場合は、差分見積の対象とする。",
-    ].join("\n")
-  );
-
-  const addonLines: string[] = [];
-  if (data.includeFumigation) addonLines.push("・燻蒸（防カビ・防虫）");
-  if (data.includePacking) addonLines.push("・長期保存資材への格納（保存箱・中性紙封筒等）");
-  if (data.includePickupDelivery) addonLines.push("・集荷・納品（梱包・輸送手配含む）");
-  if (data.includeOnsite) addonLines.push("・現地作業（臨時設営・動線確保等）");
-  if (data.includeEncryption) addonLines.push("・暗号化・アクセス制御（媒体暗号化／鍵管理等）");
-
-  if (addonLines.length > 0) {
-    push("付帯作業", addonLines.join("\n"));
+  // 5 折込・大判・薄紙等（詳細／厳格）
+  if (profile !== "standard") {
+    push("5. 折込・大判・薄紙等の取扱い（詳細）", [
+      "折込（複数回折り）等の特殊ページは、折り畳み状態の全体像を撮影した後、段階的に展開して撮影する（展開手順がある場合はそれに従う）。",
+      "大判（例：A2級以上）で1コマに収まらない場合は、複数コマに分割して取得する。分割時は、継ぎ合わせ可能となるよう重なり（オーバーラップ）を確保し、順序（例：S字／Z字）を固定する。",
+      "薄紙や裏写りが強い資料は、中間紙を挿入する等により可読性を確保する。作業上の工夫・制約はログに記録する。",
+      "サイズ変更、切断、貼り付き、ページ欠落が疑われる場合は、その事実をログで明示する（9章）。",
+    ]);
   }
+
+  // 6 画質基準・品質検査（標準→詳細→厳格で増補）
+  const qcLines = [
+    "品質基準の判定は、目視確認に加え、必要に応じて拡大確認を行う。",
+    "NG例（代表）：傾き、欠け、ピンぼけ、露出過不足、反射・写り込み、モアレ、偽色、ノイズ、天地逆、左右逆、歪み。",
+  ];
+  if (profile !== "standard") {
+    qcLines.push(
+      "詳細以上では、（必要に応じ）100%表示でのピクセル確認を行い、偽色・ノイズ・文字のつぶれ等を点検する。",
+      "再撮影・再スキャンが必要な場合は、工程内是正として行い、差替えの履歴をログに残す。",
+    );
+  }
+  if (profile === "gunma") {
+    qcLines.push(
+      "厳格では、傾き等の閾値（例：傾き2%以内など）を目安として運用し、全数検査を前提に是正を行う。",
+      "偽色・ノイズ・モアレ等の微細な劣化も不合格要因となり得るため、拡大確認を標準化する。",
+    );
+  }
+  push("6. 画質基準・品質検査", qcLines);
+
+  // 7 画像処理・色管理（詳細／厳格で増補）
+  const colorLines = [
+    "画像処理は、資料の情報を損なわない範囲で、軽微な補正（傾き補正、余白調整等）に限定するのを原則とする。",
+    "保存用（マスター）は、可能な限り可逆または非圧縮の形式を採用し、利用用（閲覧用）は用途に応じて圧縮・PDF化等を行う。",
+  ];
+  if (profile !== "standard") {
+    colorLines.push(
+      "詳細以上では、色空間（例：sRGB）やICCプロファイルの扱いを定め、同一資料群内で一貫性を担保する。",
+      "閲覧用PDFを作成する場合、画質と容量のバランスを考慮しつつ、視認性（文字のエッジ・階調）を損なわない設定とする。",
+    );
+  }
+  push("7. 画像処理・色管理", colorLines);
+
+  // 8 メタデータ（基本→詳細→厳格）
+  const mdLines: string[] = [];
+  mdLines.push("メタデータは、成果物の探索性・再利用性を高めるために付与する。");
+  if (!flags.requireMetadata) {
+    mdLines.push("標準では、基本項目（例：ファイル名、通番、種別、ページ範囲等）を中心に、提供可能な範囲で付与する。");
+  } else {
+    mdLines.push(
+      "詳細以上では、必須項目群を定め、欠落を不合格扱いとする（厳格の場合）。",
+      "必須項目例：資料識別子／資料名／巻冊・簿冊識別／ページ（コマ）番号／ファイル名／作成日／形式／解像度／色／備考。",
+      "値の表記は、区切り（半角スペース、スラッシュ等）や禁則（使用不可文字等）を定め、整合性を担保する。",
+    );
+  }
+  if (profile !== "standard") {
+    mdLines.push(
+      "作業・機材情報（例：ホストPC、OS、スキャナ／カメラ、画像処理ソフト）は、所定の形式で記録する（例：『対象資料群名及び区分 / 機材名』をカンマ＋半角スペース区切りで列挙）。",
+    );
+  }
+  push("8. メタデータ要件", mdLines);
+
+  // 9 ログ・管理データ（詳細以上で増補）
+  const logLines = [
+    "作業ログ（管理データ）は、後日の説明可能性を担保するために作成する。",
+    "最低限、欠落・重複・差替え・対象外等、成果物の完全性に影響する事項を記録する。",
+  ];
+  if (profile !== "standard") {
+    logLines.push(
+      "詳細以上では、以下の類型をログで明示する（例示）：",
+      "- スキャニング対象外（対象資料の欠落、欠番等）",
+      "- 切断（裁断・分割等の作業が生じた場合）",
+      "- サイズ変更（原資料と撮影条件が異なる場合）",
+      "- 分割（大判の分割、見開きの左右分割等）",
+      "- 誤り（天地逆、左右逆、誤ファイル等）",
+      "- ページ貼り付き（剥離不可等）",
+      "また、資料群ごとの整理情報、フォルダ構成、媒体ラベル情報等を含める。",
+    );
+  }
+  push("9. ログ・管理データ", logLines);
+
+  // 10 検査（検査書との整合）
+  const inspLines = [
+    `検査レベルは「${inspectionLabel(data.inspectionLevel)}」である。`,
+    "検査は、(i) 画質、(ii) 欠落・重複、(iii) 命名・フォルダ整合、(iv) メタデータ整合、(v) 媒体要件の順に確認する。",
+  ];
+  if (flags.fullInspection) {
+    inspLines.push("全数検査を原則とし、再撮影・差替えを工程内で完結させる。");
+  } else {
+    inspLines.push("抜取検査の場合でも、重大な欠陥が発見された場合は追加検査を行う。");
+  }
+  push("10. 検査・是正", inspLines);
+
+  // 11 納品媒体・保管（詳細／厳格）
+  const mediaLines = [
+    "納品は、成果物（マスター／閲覧用／メタデータ／ログ）を所定のフォルダ構成で格納し、媒体単位で管理する。",
+  ];
+  if (flags.requireMedia) {
+    mediaLines.push(
+      "詳細以上では、外付け媒体等への格納、媒体ラベル（媒体名、巻号、作成年月日、件名等）、ウイルスチェック、チェックサム等の運用を行う。",
+      "媒体および保管資材（保存箱・封筒等）が必要な場合は、別途実費として計上することがある。",
+    );
+  } else {
+    mediaLines.push("標準では、納品媒体の種類・本数は協議により定める。");
+  }
+  push("11. 納品媒体・保管", mediaLines);
+
+  // 12 情報管理（厳格で増補）
+  const secLines = ["作業中・納品後の情報管理は、機密度および取り扱い区分に従い実施する。"];
+  if (profile === "gunma") {
+    secLines.push(
+      "厳格では、アクセス制御、作業者権限、持出制限、監査可能なログ等により、追跡可能性を担保する。",
+    );
+  }
+  push("12. 情報管理・セキュリティ", secLines);
+
+  // 13 付帯・連絡
+  push("13. 付帯事項", [
+    "本書に定めのない事項、または解釈に疑義がある事項は、協議の上で取り決める。",
+    hasAny(data.notes) ? `備考：${data.notes}` : "備考：—",
+  ]);
 
   return sections;
 }
@@ -658,7 +694,7 @@ function buildSpecSections(data: Data): SpecSection[] {
 
 function Card(props: { title: string; children: ReactNode; right?: ReactNode }) {
   return (
-    <div className="print-page rounded-2xl border bg-white shadow-sm">
+    <div className="print-page rounded-2xl border bg-white shadow-sm print:rounded-none print:border-0 print:shadow-none">
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="text-sm font-semibold text-slate-800">{props.title}</div>
         {props.right}
@@ -828,7 +864,7 @@ function LineItemTable(props: { items: LineItem[] }) {
 
 function Page(props: { title: string; children: ReactNode }) {
   return (
-    <div className="print-page rounded-2xl border bg-white shadow-sm">
+    <div className="print-page rounded-2xl border bg-white shadow-sm print:rounded-none print:border-0 print:shadow-none">
       <div className="border-b px-4 py-3">
         <div className="text-sm font-semibold text-slate-800">{props.title}</div>
       </div>
@@ -836,6 +872,70 @@ function Page(props: { title: string; children: ReactNode }) {
     </div>
   );
 }
+
+
+function specProfilePublicLabel(p: SpecProfile) {
+  if (p === "standard") return "標準";
+  if (p === "ndl") return "詳細";
+  return "厳格";
+}
+
+const ISSUER = {
+  org: "株式会社◯◯",
+  dept: "総務部",
+  address: "東京都千代田区◯◯一丁目◯番◯号",
+  tel: "03-0000-0000",
+};
+
+function DocHeader(props: { docTitle: string; data: Data }) {
+  const d = props.data;
+  return (
+    <div className="mb-4">
+      <div className="grid grid-cols-2 gap-4 text-[11px] leading-relaxed text-slate-800">
+        <div>
+          <div className="font-semibold">宛先</div>
+          <div>{d.clientName || "（顧客名）"} 御中</div>
+          <div>担当：{d.contactName || "（担当者）"}</div>
+        </div>
+        <div className="text-right">
+          <div className="font-semibold">{ISSUER.org}</div>
+          <div>{ISSUER.dept}</div>
+          <div>{ISSUER.address}</div>
+          <div>TEL {ISSUER.tel}</div>
+          <div>発行日：{d.issueDate || "—"}</div>
+          <div>有効期限：{d.dueDate || "—"}</div>
+        </div>
+      </div>
+
+      <div className="mt-3 text-center">
+        <div className="text-lg font-semibold tracking-wide text-slate-900">{props.docTitle}</div>
+        <div className="mt-1 text-sm text-slate-800">件名：{d.projectName || "（案件名）"}</div>
+      </div>
+
+      <div className="mt-3 border-t border-slate-300" />
+    </div>
+  );
+}
+
+function DocFooter(props: { pageNo: number; totalPages: number; note?: string }) {
+  return (
+    <div className="pt-3 border-t border-slate-300 text-[11px] text-slate-700 flex items-end justify-between gap-4">
+      <div className="leading-relaxed">{props.note ?? "本書は、入力条件に基づく見積書（ドラフト）である。数量・要件の確定に伴い、金額は増減し得る。"}</div>
+      <div className="tabular-nums">{props.pageNo}/{props.totalPages}</div>
+    </div>
+  );
+}
+
+function DocPage(props: { header: ReactNode; children: ReactNode; footer: ReactNode }) {
+  return (
+    <div className="print-page bg-white flex flex-col px-6 py-6">
+      {props.header}
+      <div className="flex-1">{props.children}</div>
+      <div className="mt-auto">{props.footer}</div>
+    </div>
+  );
+}
+
 
 
 function PrintStyles() {
@@ -916,6 +1016,7 @@ export default function App() {
 
     includePriceRationalePage: true,
     includeFixedCostRationalePage: true,
+    includeParameterTables: true,
     includeInternalCalc: true,
     includeSpecDoc: true,
       includeInstructionDoc: true,
@@ -1186,7 +1287,7 @@ export default function App() {
                             </div>
                           </Card>
 
-                          <Card title="3) 仕様書の規格スイッチ（NDL／群馬）">
+                          <Card title="3) 仕様レベル（標準／詳細／厳格）">
                             <div className="grid grid-cols-2 gap-3">
                               <SelectField<SpecProfile>
                                 label="仕様プロファイル"
@@ -1195,15 +1296,11 @@ export default function App() {
                                   setData((p) => ({
                                     ...p,
                                     specProfile: v,
-                                    // 群馬に寄せた場合は、実務的に全数寄りになるため、検査レベルも補助的に引き上げる（ただし強制はしない）
+                                    // 厳格に寄せた場合は、実務的に全数寄りになるため、検査レベルも補助的に引き上げる（ただし強制はしない）
                                     inspectionLevel: v === "gunma" && p.inspectionLevel === "none" ? "sample" : p.inspectionLevel,
                                   }))
                                 }
-                                options={[
-                                  { value: "standard", label: "標準（簡易）" },
-                                  { value: "ndl", label: "NDL準拠（詳細）" },
-                                  { value: "gunma", label: "群馬仕様（厳格）" },
-                                ]}
+                                options={[{ value: "standard", label: "標準" }, { value: "ndl", label: "詳細" }, { value: "gunma", label: "厳格" }]}
                                 hint="選択に応じて、仕様書の粒度（詳細度）が連動して変化します。"
                               />
                               <div className="rounded-lg border bg-white px-3 py-2">
@@ -1216,19 +1313,19 @@ export default function App() {
                             {data.specProfile === "gunma" ? (
                               <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <Checkbox
-                                  label="全数検査（群馬）"
+                                  label="全数検査（厳格）"
                                   checked={data.gunmaAllInspection}
                                   onChange={(v) => setData((p) => ({ ...p, gunmaAllInspection: v }))}
                                   hint="工程・出荷前を含め、全数を原則化。"
                                 />
                                 <Checkbox
-                                  label="媒体要件（群馬）"
+                                  label="媒体要件（厳格）"
                                   checked={data.gunmaMediaRequirements}
                                   onChange={(v) => setData((p) => ({ ...p, gunmaMediaRequirements: v }))}
                                   hint="媒体、チェックサム、命名規則等の規格化。"
                                 />
                                 <Checkbox
-                                  label="メタデータ必須項目（群馬）"
+                                  label="メタデータ必須項目（厳格）"
                                   checked={data.gunmaMetadataMandatory}
                                   onChange={(v) => setData((p) => ({ ...p, gunmaMetadataMandatory: v }))}
                                   hint="必須欠落を不合格扱いとする運用。"
@@ -1236,7 +1333,7 @@ export default function App() {
                               </div>
                             ) : (
                               <div className="mt-3 text-xs text-slate-600">
-                                群馬仕様を選択した場合のみ、「全数検査／媒体要件／メタデータ必須項目」を入力UI上のスイッチとして表示します。
+                                厳格を選択した場合のみ、「全数検査／媒体要件／メタデータ必須項目」を入力UI上のスイッチとして表示します。
                               </div>
                             )}
                           </Card>
@@ -1260,6 +1357,13 @@ export default function App() {
                                 onChange={(v) => setData((p) => ({ ...p, includeFixedCostRationalePage: v }))}
                                 hint="見積書の次ページ以降として、初期セットアップ費・管理費・付帯定額の内訳と算定根拠を出力します。"
                               />
+
+<Checkbox
+  label="顧客提出用：パラメータ表（別紙）を同梱"
+  checked={data.includeParameterTables}
+  onChange={(v) => setData((p) => ({ ...p, includeParameterTables: v }))}
+  hint="単価（基礎単価・加算・検査倍率）および固定費（セットアップ費・管理費・付帯定額）の“表”を、別紙として出力します。"
+/>
                               <Checkbox
                                 label="内部用：計算書を出力"
                                 checked={data.includeInternalCalc}
@@ -1376,6 +1480,7 @@ export default function App() {
                                           { value: "A4以下", label: "A4以下" },
                                           { value: "A3", label: "A3" },
                                           { value: "A2", label: "A2" },
+                                          { value: "A2以上", label: "A2以上" },
                                           { value: "A1", label: "A1" },
                                           { value: "A0", label: "A0" },
                                           { value: "図面特大", label: "図面特大" },
@@ -1457,7 +1562,7 @@ export default function App() {
                                               { value: "basic", label: "基本" },
                                               { value: "rich", label: "充実" },
                                             ]}
-                                            hint="NDL／群馬仕様の場合、仕様書側で項目群が詳細化されます。"
+                                            hint="詳細／厳格の場合、仕様書側で要件（検査、媒体、メタデータ等）が増補されます。"
                                           />
                                         </div>
                                       </div>
@@ -1647,55 +1752,262 @@ export default function App() {
                     <div className="text-sm text-slate-700">入力画面の「出力対象」で「指示書」をONにすると、このタブに指示書が生成されます。</div>
                   </Card>
                 )}
+
+                {data.includeInternalCalc ? (
+                  <Page title="内部用：計算書（ドラフト）">
+                                                  <div className="mb-2 text-xs text-slate-600">
+                                                    内部用のため、顧客提出用の体裁ではなく、計算の前提・内訳を残す。
+                                                  </div>
+
+                                                  <div className="rounded-lg border bg-slate-50 p-3 text-sm mb-3">
+                                                    <div className="font-semibold">前提</div>
+                                                    <div className="text-xs text-slate-600">
+                                                      <ul className="list-disc space-y-1 pl-5">
+                                                        <li>プラン：{tierLabel(data.tier)}（基礎単価 {fmtJPY(TIER_BASE_PER_UNIT[data.tier])}/頁）</li>
+                                                        <li>検査：{inspectionLabel(data.inspectionLevel)}（倍率 ×{INSPECTION_MULTIPLIER[data.inspectionLevel].toFixed(2)}）</li>
+                                                        <li>仕様プロファイル：{specProfileLabel(data.specProfile)}</li>
+                                                        {data.specProfile === "gunma" ? (
+                                                          <li>
+                                                            厳格オプション：全数検査={data.gunmaAllInspection ? "ON" : "OFF"}／媒体要件={data.gunmaMediaRequirements ? "ON" : "OFF"}／メタデータ必須=
+                                                            {data.gunmaMetadataMandatory ? "ON" : "OFF"}
+                                                          </li>
+                                                        ) : null}
+                                                      </ul>
+                                                    </div>
+                                                  </div>
+
+                                                  <LineItemTable items={calc.lineItems} />
+
+                                                  <div className="mt-3 grid grid-cols-3 gap-3">
+                                                    <div className="rounded-lg border bg-white p-3">
+                                                      <div className="text-xs text-slate-600">小計（税抜）</div>
+                                                      <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.subtotal)}</div>
+                                                    </div>
+                                                    <div className="rounded-lg border bg-white p-3">
+                                                      <div className="text-xs text-slate-600">消費税</div>
+                                                      <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.tax)}</div>
+                                                    </div>
+                                                    <div className="rounded-lg border bg-slate-900 p-3 text-white">
+                                                      <div className="text-xs opacity-80">合計（税込）</div>
+                                                      <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.total)}</div>
+                                                    </div>
+                                                  </div>
+
+                                
+
+                                                </Page>
+                ) : null}
+
+                {data.includeInternalPlanDiffPage ? (
+                  <Page title="内部資料：プラン差分説明（内部用）">
+                    <div className="mb-2 text-xs text-slate-600">
+                      顧客提示の前に、プランの差（何が増えて何が減るか）を言語化しておくための内部資料。
+                    </div>
+
+                    <div className="rounded-lg border border-slate-200 bg-white p-4 text-xs text-slate-800">
+                      <div className="font-semibold">目的</div>
+                      <div className="mt-1 text-slate-700">
+                        顧客提示の前に、プランの差（何が増えて何が減るか）を、帳票として崩れない形で整理する。
+                      </div>
+
+                      <div className="mt-4 font-semibold">エコノミー</div>
+                      <ul className="list-disc space-y-1 pl-5 text-slate-700">
+                        <li>価格優先。検査は「抜取」までを基本に、工程の深追いはしない。</li>
+                        <li>仕様書は必要十分の粒度（標準〜詳細）を選択可能。</li>
+                      </ul>
+
+                      <div className="mt-4 font-semibold">スタンダード</div>
+                      <ul className="list-disc space-y-1 pl-5 text-slate-700">
+                        <li>工程内の是正（撮り直し、命名ルール厳守、軽微な補正）を前提にした運用。</li>
+                        <li>詳細レベルのメタデータ（項目群・整合性）を実務レベルで回す。</li>
+                      </ul>
+
+                      <div className="mt-4 font-semibold">プレミアム</div>
+                      <ul className="list-disc space-y-1 pl-5 text-slate-700">
+                        <li>品質責任を強く負う前提。全数検査・二重検査、監査可能な情報管理、詳細ログ等を含む。</li>
+                        <li>厳格仕様（「全数検査／媒体要件／メタデータ必須」をONにした案件）にも耐える。</li>
+                      </ul>
+
+                      <div className="mt-4 text-slate-600">
+                        ※ 本システムでは、差分を「基礎単価（L0）」「加算要素（L1〜）」「検査倍率」「案件固定費（F0〜）」に分解して表現している。
+                      </div>
+                    </div>
+                  </Page>
+                ) : null}
+
+                {data.includeInternalPlanDiffPage ? (
+                  <Page title="内部資料：3プラン比較詳細（内部用）">
+                    <div className="mb-2 text-xs text-slate-600">
+                      3プランの差分が「どこに現れるか（L0 と F0〜）」を、内部向けに一覧化する。加算要素（サイズ/色/dpi/形式/OCR等）は原則としてプラン共通であり、検査倍率・仕様スイッチと組み合わせて最終単価となる。
+                    </div>
+
+                    {(() => {
+                      const tiers: Tier[] = ["economy", "standard", "premium"];
+                      const fixedSum = (t: Tier) => PROJECT_FIXED_FEES[t].setup + PROJECT_FIXED_FEES[t].management;
+
+                      return (
+                        <div className="space-y-5">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900 mb-2">1) L0（基礎単価）・F0〜（案件固定費）の比較</div>
+                            <div className="overflow-auto">
+                              <table className="w-full text-xs">
+                                <thead className="bg-slate-50">
+                                  <tr className="text-left">
+                                    <th className="p-2 border-b w-[16%]">プラン</th>
+                                    <th className="p-2 border-b text-right">L0 基礎単価（円/頁）</th>
+                                    <th className="p-2 border-b text-right">F0 セットアップ</th>
+                                    <th className="p-2 border-b text-right">F1 管理・進行</th>
+                                    <th className="p-2 border-b text-right">F0+F1 合計</th>
+                                    <th className="p-2 border-b">含意（短い注記）</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {tiers.map((t) => (
+                                    <tr key={t} className="align-top">
+                                      <td className="p-2 border-b font-semibold text-slate-800">{tierLabel(t)}</td>
+                                      <td className="p-2 border-b text-right tabular-nums">{fmtJPY(TIER_BASE_PER_UNIT[t])}</td>
+                                      <td className="p-2 border-b text-right tabular-nums">{fmtJPY(PROJECT_FIXED_FEES[t].setup)}</td>
+                                      <td className="p-2 border-b text-right tabular-nums">{fmtJPY(PROJECT_FIXED_FEES[t].management)}</td>
+                                      <td className="p-2 border-b text-right tabular-nums font-semibold">{fmtJPY(fixedSum(t))}</td>
+                                      <td className="p-2 border-b text-slate-700">
+                                        {t === "economy"
+                                          ? "価格優先。工程是正・証跡は最小限。"
+                                          : t === "standard"
+                                            ? "工程内是正・整合性運用を前提。"
+                                            : "品質責任・監査耐性（ログ等）を強く持つ。"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900 mb-2">2) 検査倍率（Inspection Multiplier）の比較</div>
+                            <div className="overflow-auto">
+                              <table className="w-full text-xs">
+                                <thead className="bg-slate-50">
+                                  <tr className="text-left">
+                                    <th className="p-2 border-b w-[30%]">検査レベル</th>
+                                    <th className="p-2 border-b text-right">倍率</th>
+                                    <th className="p-2 border-b">備考</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(["none", "sample", "full", "double_full"] as InspectionLevel[]).map((lv) => (
+                                    <tr key={lv}>
+                                      <td className="p-2 border-b font-semibold text-slate-800">{inspectionLabel(lv)}</td>
+                                      <td className="p-2 border-b text-right tabular-nums">×{INSPECTION_MULTIPLIER[lv].toFixed(2)}</td>
+                                      <td className="p-2 border-b text-slate-700">
+                                        {lv === "sample"
+                                          ? "抜取検査（品質の下振れリスクは残る）"
+                                          : lv === "full"
+                                            ? "全数検査（手戻り・是正を織り込む）"
+                                            : lv === "double_full"
+                                              ? "二重検査（監査耐性・証跡強化）"
+                                              : "検査なし（工程内での是正は別途合意）"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+
+                          <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700">
+                            <div className="font-semibold text-slate-800 mb-1">3) 単価の構造（共通の見方）</div>
+                            <div className="space-y-1">
+                              <div>・単価（円/頁）は概ね「L0（プラン基礎単価）＋L1〜（加算要素）」×「検査倍率」で算定する。</div>
+                              <div>・加算要素（サイズ/色/dpi/形式/OCR/メタデータ/取扱い等）は、プランではなく要件で決まる（＝プラン差の主因は L0 と F0〜）。</div>
+                              <div>・案件固定費（F0〜）は「案件の立上げ・進行・管理・情報管理・監査耐性」に対応し、プランが上がるほど厚くなる。</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </Page>
+                ) : null}
               </div>
             ) : null}
 
             {view === "estimate" ? (
-              <div className="space-y-4">
-                            {data.includeQuotation ? (
-                              <Page title="顧客提出用：見積書（ドラフト）">
-                                <div className="mb-3">
-                                  <div className="text-sm font-semibold">{data.projectName}</div>
-                                  <div className="text-xs text-slate-600">顧客：{data.clientName}　／　担当：{data.contactName}　／　発行日：{data.issueDate}</div>
-                                </div>
+              (() => {
+                const totalPages =
+                  (data.includeQuotation ? 1 : 0) +
+                  (data.includeQuotation && data.includePriceRationalePage ? 1 : 0) +
+                  (data.includeQuotation && data.includeFixedCostRationalePage ? 1 : 0);
 
-                                <div className="mb-3 rounded-lg border bg-slate-50 p-3 text-sm">
-                                  <div className="font-semibold text-slate-800 mb-1">プラン：{tierLabel(data.tier)}</div>
-                                  <div className="text-xs text-slate-600">
-                                    検査：{inspectionLabel(data.inspectionLevel)} ／ 仕様：{specProfileLabel(data.specProfile)}
-                                  </div>
-                                </div>
+                let pageNo = 0;
+                const nextNo = () => {
+                  pageNo += 1;
+                  return pageNo;
+                };
 
-                                <LineItemTable items={calc.lineItems} />
+                const pages: ReactNode[] = [];
 
-                                <div className="mt-3 grid grid-cols-3 gap-3">
-                                  <div className="rounded-lg border bg-white p-3">
-                                    <div className="text-xs text-slate-600">小計（税抜）</div>
-                                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.subtotal)}</div>
-                                  </div>
-                                  <div className="rounded-lg border bg-white p-3">
-                                    <div className="text-xs text-slate-600">消費税</div>
-                                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.tax)}</div>
-                                  </div>
-                                  <div className="rounded-lg border bg-slate-900 p-3 text-white">
-                                    <div className="text-xs opacity-80">合計（税込）</div>
-                                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.total)}</div>
-                                  </div>
-                                </div>
+                if (data.includeQuotation) {
+                  const no = nextNo();
+                  pages.push(
+                    <DocPage
+                      key="quotation"
+                      header={<DocHeader docTitle="御見積書" data={data} />}
+                      footer={<DocFooter pageNo={no} totalPages={totalPages} />}
+                    >
+                      <div className="mb-4 text-[12px] text-slate-800">
+                        <div className="grid grid-cols-2 gap-x-8 gap-y-1">
+                          <div><span className="font-semibold">プラン：</span>{tierLabel(data.tier)}</div>
+                          <div><span className="font-semibold">検査：</span>{inspectionLabel(data.inspectionLevel)}</div>
+                          <div><span className="font-semibold">仕様レベル：</span>{specProfilePublicLabel(data.specProfile)}</div>
+                          <div><span className="font-semibold">税率：</span>{Math.round(data.taxRate * 100)}%</div>
+                        </div>
+                      </div>
 
-                                <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
-                                  <div className="text-xs font-semibold text-slate-700">注記</div>
-                                  <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-slate-700">
-                                    <li>本見積は概算であり、数量確定・要件確定後に増減する可能性があります。</li>
-                                    <li>仕様（NDL／群馬等）の詳細は、別紙仕様書に従います。</li>
-                                    <li>価格は税抜表示（消費税別途）です。</li>
-                                  </ol>
-                                </div>
-                              </Page>
-                             ) : null}
+                      <div className="text-sm font-semibold text-slate-900 mb-2">見積明細</div>
+                      <LineItemTable items={calc.lineItems} />
 
-                            {data.includeQuotation && data.includePriceRationalePage ? (
-                              <Page title="顧客提出用：単価算定根拠（別紙）">
+                      <div className="mt-4 flex justify-end">
+                        <table className="w-72 text-sm">
+                          <tbody>
+                            <tr>
+                              <td className="py-1 text-slate-700">小計</td>
+                              <td className="py-1 text-right tabular-nums">{fmtJPY(calc.subtotal)}</td>
+                            </tr>
+                            <tr>
+                              <td className="py-1 text-slate-700">消費税</td>
+                              <td className="py-1 text-right tabular-nums">{fmtJPY(calc.tax)}</td>
+                            </tr>
+                            <tr className="border-t">
+                              <td className="py-1 font-semibold text-slate-900">合計</td>
+                              <td className="py-1 text-right tabular-nums font-semibold text-slate-900">{fmtJPY(calc.total)}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="mt-6 text-xs text-slate-700">
+                        <div className="font-semibold mb-1">注記</div>
+                        <ol className="list-decimal pl-5 space-y-1">
+                          <li>数量および作業範囲は、確定に伴い調整されることがあります。</li>
+                          <li>単価の算定根拠は、別紙「単価算定根拠（倍率・加算の積算）」にて示します。</li>
+                          <li>案件固定費の算定根拠は、別紙「案件固定費算定根拠（F0〜）」にて示します。</li>
+                          <li>価格は税抜表示とし、消費税を別途加算します。</li>
+                          <li>納品・検査・仕様の詳細は、別紙仕様書に従います。</li>
+                        </ol>
+                      </div>
+                    </DocPage>
+                  );
+                }
+
+                if (data.includeQuotation && data.includePriceRationalePage) {
+                  const no = nextNo();
+                  pages.push(
+                    <DocPage
+                      key="priceRationale"
+                      header={<DocHeader docTitle="単価算定根拠（別紙）" data={data} />}
+                      footer={<DocFooter pageNo={no} totalPages={totalPages} />}
+                    >
+
                                 <div className="mb-3 text-xs text-slate-600">
                                   本別紙は、見積書の単価がどのように算定されたか（基礎単価＋加算要素×検査倍率）を、顧客向けに明示するためのものです。
                                   端数処理は「円単位で四捨五入」を前提とします。
@@ -1761,6 +2073,17 @@ export default function App() {
                                               <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(bd.formats)}</td>
                                               <td className="py-2 px-2">{formatParts || "—"}</td>
                                             </tr>
+
+{w.formats.length > 1
+  ? w.formats.map((f, idx) => (
+      <tr key={String(f) + idx} className="border-b">
+        <td className="py-2 px-2 font-mono">{"L4-" + String(idx + 1)}</td>
+        <td className="py-2 px-2">形式加算（内訳）</td>
+        <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(FORMAT_ADDER[f] ?? 0)}</td>
+        <td className="py-2 px-2">{formatLabel(f)}</td>
+      </tr>
+    ))
+  : null}
                                             <tr className="border-b">
                                               <td className="py-2 px-2 font-mono">L5</td>
                                               <td className="py-2 px-2">OCR加算</td>
@@ -1812,11 +2135,19 @@ export default function App() {
                                 <div className="mt-4 text-xs text-slate-600">
                                   参考：案件固定費（初期セットアップ費／進行管理・品質管理費）は、ページ単価とは別に案件単位で計上します。
                                 </div>
-                              </Page>
-                            ) : null}
+                    </DocPage>
+                  );
+                }
 
-                            {data.includeQuotation && data.includeFixedCostRationalePage ? (
-                              <Page title="顧客提出用：案件固定費の算定根拠（別紙）">
+                if (data.includeQuotation && data.includeFixedCostRationalePage) {
+                  const no = nextNo();
+                  pages.push(
+                    <DocPage
+                      key="fixedCostRationale"
+                      header={<DocHeader docTitle="案件固定費算定根拠（別紙）" data={data} />}
+                      footer={<DocFooter pageNo={no} totalPages={totalPages} />}
+                    >
+
                                 <div className="mb-3 text-xs text-slate-600">
                                   本別紙は、見積書に計上される「案件固定費（初期セットアップ費／進行管理・品質管理費）」および「付帯作業（定額）」の積算根拠を、顧客向けに明示するためのものです。
                                   作業単価（頁単価等）の積算根拠は、前ページ（単価算定根拠）をご参照ください。
@@ -1917,118 +2248,67 @@ export default function App() {
                                     </div>
                                   );
                                 })()}
-                              </Page>
-                            ) : null}
+                    </DocPage>
+                  );
+                }
 
-                            {data.includeInternalCalc ? (
-                              <Page title="内部用：計算書（ドラフト）">
-                                <div className="mb-2 text-xs text-slate-600">
-                                  内部用のため、顧客提出用の体裁ではなく、計算の前提・内訳を残す。
-                                </div>
+                return (
+                  <div className="space-y-4">
+                    {pages}
 
-                                <div className="rounded-lg border bg-slate-50 p-3 text-sm mb-3">
-                                  <div className="font-semibold">前提</div>
-                                  <div className="text-xs text-slate-600">
-                                    <ul className="list-disc space-y-1 pl-5">
-                                      <li>プラン：{tierLabel(data.tier)}（基礎単価 {fmtJPY(TIER_BASE_PER_UNIT[data.tier])}/頁）</li>
-                                      <li>検査：{inspectionLabel(data.inspectionLevel)}（倍率 ×{INSPECTION_MULTIPLIER[data.inspectionLevel].toFixed(2)}）</li>
-                                      <li>仕様プロファイル：{specProfileLabel(data.specProfile)}</li>
-                                      {data.specProfile === "gunma" ? (
-                                        <li>
-                                          群馬スイッチ：全数検査={data.gunmaAllInspection ? "ON" : "OFF"}／媒体要件={data.gunmaMediaRequirements ? "ON" : "OFF"}／メタデータ必須=
-                                          {data.gunmaMetadataMandatory ? "ON" : "OFF"}
-                                        </li>
-                                      ) : null}
-                                    </ul>
-                                  </div>
-                                </div>
-
-                                <LineItemTable items={calc.lineItems} />
-
-                                <div className="mt-3 grid grid-cols-3 gap-3">
-                                  <div className="rounded-lg border bg-white p-3">
-                                    <div className="text-xs text-slate-600">小計（税抜）</div>
-                                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.subtotal)}</div>
-                                  </div>
-                                  <div className="rounded-lg border bg-white p-3">
-                                    <div className="text-xs text-slate-600">消費税</div>
-                                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.tax)}</div>
-                                  </div>
-                                  <div className="rounded-lg border bg-slate-900 p-3 text-white">
-                                    <div className="text-xs opacity-80">合計（税込）</div>
-                                    <div className="text-sm font-semibold tabular-nums">{fmtJPY(calc.total)}</div>
-                                  </div>
-                                </div>
-
-                                {data.includeInternalPlanDiffPage ? (
-                                  <div className="mt-4 rounded-xl border bg-white p-4">
-                                    <div className="text-sm font-semibold mb-2">（内部用）プラン差分説明（見積書の“続くページ”相当）</div>
-                                    <div className="text-xs text-slate-700">
-                                      <div className="mb-2">
-                                        目的：顧客提示の前に、プランの差（何が増えて何が減るか）を、帳票として崩れない形で整理する。
                                       </div>
-
-                                      <div className="mt-2 font-semibold">エコノミー</div>
-                                      <ul className="list-disc space-y-1 pl-5">
-                                        <li>価格優先。検査は「抜取」までを基本に、工程の深追いはしない。</li>
-                                        <li>仕様書は必要十分の粒度（標準〜NDL準拠）を選択可能。</li>
-                                      </ul>
-
-                                      <div className="mt-3 font-semibold">スタンダード</div>
-                                      <ul className="list-disc space-y-1 pl-5">
-                                        <li>工程内の是正（撮り直し、命名ルール厳守、軽微な補正）を前提にした運用。</li>
-                                        <li>NDL準拠のメタデータ（項目群・整合性）を実務レベルで回す。</li>
-                                      </ul>
-
-                                      <div className="mt-3 font-semibold">プレミアム</div>
-                                      <ul className="list-disc space-y-1 pl-5">
-                                        <li>品質責任を強く負う前提。全数検査・二重検査、監査可能な情報管理、詳細ログ等を含む。</li>
-                                        <li>厳格仕様（群馬仕様のような「全数検査／媒体要件／メタデータ必須」をONにした案件）にも耐える。</li>
-                                      </ul>
-
-                                      <div className="mt-3 text-slate-600">
-                                        ※ 本システムでは、差分を「基礎単価」「加算要素」「検査倍率」「案件固定費（管理・セットアップ）」に分解して表現している。
-                                      </div>
-                                    </div>
-                                  </div>
-                                ) : null}
-                              </Page>
-                            ) : null}
-              </div>
+                );
+              })()
             ) : null}
 
             {view === "spec" ? (
-              <div className="space-y-4">
-                {data.includeSpecDoc ? (
-                  <Page title="仕様書（ドラフト：規格スイッチ連動）">
-                                  <div className="mb-3 rounded-lg border bg-slate-50 p-3 text-sm">
-                                    <div className="font-semibold text-slate-800">仕様プロファイル：{specProfileLabel(data.specProfile)}</div>
-                                    <div className="text-xs text-slate-600">
-                                      検査：{inspectionLabel(data.inspectionLevel)}
-                                      {data.specProfile === "gunma"
-                                        ? ` ／ 群馬スイッチ：全数検査=${data.gunmaAllInspection ? "ON" : "OFF"}・媒体要件=${data.gunmaMediaRequirements ? "ON" : "OFF"}・メタデータ必須=${data.gunmaMetadataMandatory ? "ON" : "OFF"}`
-                                        : ""}
-                                    </div>
-                                  </div>
+              <div className="print-area">
+                {(() => {
+                  const sections = buildSpecSections(data);
+                  const chunks =
+                    sections.length <= 8
+                      ? [sections.slice(0, 5), sections.slice(5)]
+                      : [sections.slice(0, 4), sections.slice(4, 8), sections.slice(8)];
+                  const pages = chunks.filter((c) => c.length > 0);
+                  const total = pages.length;
 
-                                  <div className="space-y-4">
-                                    {specSections.map((s, idx) => (
-                                      <div key={idx} className="rounded-xl border bg-white p-3">
-                                        <div className="text-sm font-semibold text-slate-800 mb-2">{s.title}</div>
-                                        <div className="text-sm text-slate-700 whitespace-pre-wrap">{s.body}</div>
-                                      </div>
-                                    ))}
-                                  </div>
+                  return pages.map((chunk, idx) => (
+                    <DocPage
+                      key={`spec-${idx}`}
+                      header={<DocHeader docTitle={`仕様書（${specProfilePublicLabel(data.specProfile)}）`} data={data} />}
+                      footer={
+                        <DocFooter
+                          pageNo={idx + 1}
+                          totalPages={total}
+                          note="本書は、入力条件に基づく仕様書（ドラフト）である。"
+                        />
+                      }
+                    >
+                      {idx === 0 ? (
+                        <div className="mb-4 text-sm leading-relaxed">
+                          <div>宛先：{data.clientName || "（未入力）"} 御中</div>
+                          <div>作成者：株式会社◯◯　総務部</div>
+                          <div>件名：{data.projectName || "（未入力）"}　仕様書</div>
+                          <div>仕様レベル：{specProfilePublicLabel(data.specProfile)}</div>
+                          <div>
+                            発行日：{data.issueDate || "—"} ／ 納期：{data.dueDate || "—"}
+                          </div>
+                        </div>
+                      ) : null}
 
-                                  <div className="mt-3 text-xs text-slate-600 whitespace-pre-wrap">
-                                    【注】本仕様書は、本システムの入力情報から自動生成されるドラフトである。発注仕様（RFP）に固有の要件がある場合は、該当箇所を追記・優先する。
-                                  </div>
-                                </Page>
-                ) : (
-                  <Card title="仕様書（出力OFF）">
-                    <div className="text-sm text-slate-700">入力画面の「出力対象」で「仕様書」をONにすると、このタブに仕様書が生成されます。</div>
-                  </Card>
-                )}
+                      <div className="space-y-4">
+                        {chunk.map((s, i) => (
+                          <section key={`${s.title}-${i}`}>
+                            <div className="font-semibold">{s.title}</div>
+                            <div className="mt-1 whitespace-pre-line text-sm leading-relaxed text-slate-800">
+                              {s.body}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                    </DocPage>
+                  ));
+                })()}
               </div>
             ) : null}
 
@@ -2079,7 +2359,7 @@ export default function App() {
                           </table>
                         </div>
                         <div className="mt-3 text-xs text-slate-500">
-                          注: 群馬仕様など「全数検査」「媒体要件」「メタデータ必須項目」が規格化されている場合は、入力UIのスイッチ（標準=群馬）で自動的に強制されます。
+                          注: 「全数検査」「媒体要件」「メタデータ必須項目」が規格化されている案件では、入力UIで「厳格」を選択し、各スイッチ（全数検査／媒体要件／メタデータ必須項目）をONにすることで、仕様書・検査書の本文に反映されます。
                         </div>
                       </div>
                     </div>
