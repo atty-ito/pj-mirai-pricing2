@@ -1,31 +1,13 @@
-// プランの型
 export type Tier = "economy" | "standard" | "premium";
-
-// 仕様プロファイルの型
 export type SpecProfile = "standard" | "ndl" | "gunma";
-
-// 検査レベルの型
 export type InspectionLevel = "none" | "sample" | "full" | "double_full";
-
-// サイズ区分の型
 export type SizeClass = "A4以下" | "A3" | "A2" | "A2以上" | "A1" | "A0" | "図面特大";
-
-// 色モードの型
 export type ColorMode = "mono" | "gray" | "color";
-
-// 解像度の型
 export type Dpi = 300 | 400 | 600;
-
-// メタデータレベルの型
 export type MetadataLevel = "none" | "basic" | "rich";
-
-// 取扱区分の型
 export type Handling = "normal" | "fragile" | "bound" | "mylars" | "mixed";
-
-// ファイル形式の型
 export type FileFormat = "PDF" | "PDF/A" | "TIFF" | "JPEG" | "JPEG2000" | "TXT" | "XML";
 
-// 作業項目のデータ構造
 export type WorkItem = {
   id: string;
   title: string;
@@ -41,7 +23,6 @@ export type WorkItem = {
   notes?: string;
 };
 
-// 特殊工程・実費のデータ構造
 export type MiscExpense = {
   id: string;
   label: string;
@@ -52,7 +33,6 @@ export type MiscExpense = {
   notes?: string;
 };
 
-// アプリ全体のデータ構造
 export type Data = {
   quotationNo: string;
   issuerOrg: string;
@@ -115,5 +95,4 @@ export type Data = {
   managementFeeNote: string;
 };
 
-// 表示切替用のキー型
 export type ViewKey = "input" | "instruction" | "estimate" | "compare" | "spec" | "inspection";
