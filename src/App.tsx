@@ -57,6 +57,11 @@ type Data = {
   issuerRep: string;
   issuerAddress: string;
   issuerTel: string;
+  issuerFax: string;
+  issuerOpsDept: string;
+  issuerOpsAddress: string;
+  issuerContactPerson: string;
+  issuerContactEmail: string;
   issuerBankName: string;
   issuerBankBranch: string;
   issuerBankType: string;
@@ -65,6 +70,7 @@ type Data = {
 
   // 検査結果（提出物としての検査表を完成させるための入力）
   inspectionReportNo: string;
+  inspectionIssueDate: string;
   inspectionDate: string;
   inspectionOverall: "pass" | "conditional" | "fail";
   inspectionDefectCount: number;
@@ -119,6 +125,9 @@ type Data = {
   // 内部用：プラン差分説明ページ（必ず出す設定）
   includeInternalPlanDiffPage: boolean;
 
+
+  // 内部用：3プラン比較表（経営判断向け）
+  includeInternalPlanComparePage: boolean;
   // 作業対象
   workItems: WorkItem[];
 
@@ -252,24 +261,24 @@ function yyyymmdd(iso: string) {
 }
 
 function suggestQuotationNo(iso: string) {
-  // 初期表示用（通番の確定ではなく“候補”）：KHQ-YYYYMMDD-001
+  // 初期表示用（通番の確定ではなく“候補”）：YYYYMMDD-001
   const ymd = yyyymmdd(iso);
   if (!ymd) return "";
-  return `KHQ-${ymd}-001`;
+  return `${ymd}-001`;
 }
 
 function allocateQuotationNo(iso: string) {
   // 通番管理（ローカル）：同一日付で採番ボタンを押すたびに 001,002,... を払い出す
   const ymd = yyyymmdd(iso);
   if (!ymd) return "";
-  if (typeof window === "undefined") return `KHQ-${ymd}-001`;
+  if (typeof window === "undefined") return `${ymd}-001`;
 
-  const key = `khq_quote_seq_${ymd}`;
+  const key = `quote_seq_${ymd}`;
   const cur = Number(window.localStorage.getItem(key) || "0");
   const next = Math.max(1, cur + 1);
   window.localStorage.setItem(key, String(next));
   const seq = String(next).padStart(3, "0");
-  return `KHQ-${ymd}-${seq}`;
+  return `${ymd}-${seq}`;
 }
 
 function suggestInspectionReportNo(iso: string) {
@@ -787,7 +796,11 @@ function buildSpecSections(data: Data): SpecSection[] {
     hasAny(data.notes) ? `備考：${data.notes}` : "備考：—",
   ]);
 
-  return sections;
+  return sections.map((s, i) => {
+    const base = String(s.title || "").replace(/^\s*\d+\.\s*/, "");
+    return { ...s, title: `${i + 1}. ${base}` };
+  });
+
 }
 
 
@@ -814,14 +827,20 @@ function TextField(props: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  disabled?: boolean;
 }) {
+  const disabled = Boolean(props.disabled);
   return (
     <div>
       <Label>{props.label}</Label>
       <input
-        className="w-full rounded-lg border px-3 py-2 text-sm"
+        className={[
+          "w-full rounded-lg border px-3 py-2 text-sm",
+          disabled ? "bg-slate-50 text-slate-600" : "bg-white",
+        ].join(" ")}
         value={String(props.value)}
         placeholder={props.placeholder}
+        disabled={disabled}
         onChange={(e) => props.onChange(e.target.value)}
       />
     </div>
@@ -983,10 +1002,16 @@ function specProfilePublicLabel(p: SpecProfile) {
 
 const ISSUER = {
   org: "株式会社国際マイクロ写真工業社",
-  rep: "代表取締役　◯◯",
-  dept: "総務部",
-  address: "〒000-0000 東京都○○区○○一丁目○番○号",
-  tel: "03-0000-0000",
+  rep: "代表取締役　森 松 義 喬",
+  dept: "経営管理本部",
+  address: "東京都新宿区箪笥町5（経営管理本部）",
+  opsDept: "営業部・資材販売部・オペレーションセンター",
+  opsAddress: "〒162-0833　東京都新宿区箪笥町4-3（営業部・資材販売部・オペレーションセンター）",
+  tel: "03-3260-5931",
+  fax: "03-3269-4387",
+  contactPerson: "◯◯",
+  contactEmail: "e@kmsym.com",
+  // 振込先情報は「見積書」では原則として非表示（請求書等で必要になった場合に使用）
   bankName: "○○銀行",
   bankBranch: "○○支店",
   bankType: "普通",
@@ -997,10 +1022,16 @@ const ISSUER = {
 function issuerFromData(d: Data) {
   return {
     org: d.issuerOrg || ISSUER.org,
-    rep: d.issuerRep || ISSUER.rep,
-    dept: d.issuerDept || ISSUER.dept,
-    address: d.issuerAddress || ISSUER.address,
+    // 「代表者」「TEL」「FAX」は社内で固定値として扱う（誤入力を防ぐ）
+    rep: ISSUER.rep,
+    hqDept: d.issuerDept || ISSUER.dept,
+    hqAddress: d.issuerAddress || ISSUER.address,
+    opsDept: d.issuerOpsDept || ISSUER.opsDept,
+    opsAddress: d.issuerOpsAddress || ISSUER.opsAddress,
     tel: d.issuerTel || ISSUER.tel,
+    fax: d.issuerFax || ISSUER.fax,
+    contactPerson: d.issuerContactPerson || ISSUER.contactPerson,
+    contactEmail: d.issuerContactEmail || ISSUER.contactEmail,
     bankName: d.issuerBankName || ISSUER.bankName,
     bankBranch: d.issuerBankBranch || ISSUER.bankBranch,
     bankType: d.issuerBankType || ISSUER.bankType,
@@ -1025,10 +1056,13 @@ function InlineSealBox(props: { label?: string }) {
   );
 }
 
-function DocHeader(props: { docTitle: string; data: Data }) {
+function DocHeader(props: { docTitle: string; data: Data; issueDateOverride?: string; dueDateOverride?: string; showDueDate?: boolean }) {
   const d = props.data;
   const isr = issuerFromData(d);
   const qno = d.quotationNo || suggestQuotationNo(d.issueDate);
+  const issueDate = props.issueDateOverride ?? d.issueDate;
+  const dueDate = props.dueDateOverride ?? d.dueDate;
+  const showDueDate = props.showDueDate !== false;
   return (
     <div className="mb-4">
       <div className="grid grid-cols-2 gap-4 text-[11px] leading-relaxed text-slate-800">
@@ -1042,12 +1076,16 @@ function DocHeader(props: { docTitle: string; data: Data }) {
             <div className="text-right">
               <div className="font-semibold">{isr.org}</div>
               <div>{isr.rep}</div>
-              <div>{isr.dept}</div>
-              <div>{isr.address}</div>
-              <div>TEL {isr.tel}</div>
+              <div className="mt-1">本社：{isr.hqDept}</div>
+              <div>{isr.hqAddress}</div>
+              <div className="mt-1">実務連絡先：{isr.opsDept}</div>
+              <div>{isr.opsAddress}</div>
+              <div>TEL {isr.tel}　FAX {isr.fax}</div>
+              <div>E-mail {isr.contactEmail}</div>
+              <div>担当 {isr.contactPerson}</div>
               {qno ? <div>見積No：{qno}</div> : null}
-              <div>発行日：{d.issueDate || "—"}</div>
-              <div>有効期限：{d.dueDate || "—"}</div>
+              <div>発行日：{issueDate || "—"}</div>
+              {showDueDate ? <div>有効期限：{dueDate || "—"}</div> : null}
             </div>
             <div className="pt-1">
               <SealBox />
@@ -1082,9 +1120,13 @@ function EstimateCoverHeader(props: { data: Data; totalAmount: number }) {
             <div className="text-right">
               <div className="font-semibold">{isr.org}</div>
               <div>{isr.rep}</div>
-              <div>{isr.dept}</div>
-              <div>{isr.address}</div>
-              <div>TEL {isr.tel}</div>
+              <div className="mt-1">本社：{isr.hqDept}</div>
+              <div>{isr.hqAddress}</div>
+              <div className="mt-1">実務連絡先：{isr.opsDept}</div>
+              <div>{isr.opsAddress}</div>
+              <div>TEL {isr.tel}　FAX {isr.fax}</div>
+              <div>E-mail {isr.contactEmail}</div>
+              <div>担当 {isr.contactPerson}</div>
             </div>
             <div className="pt-1">
               <SealBox />
@@ -1119,13 +1161,14 @@ function EstimateCoverHeader(props: { data: Data; totalAmount: number }) {
         </div>
         <div>
           <div>有効期限：発行日より1ヶ月</div>
-          <div>連絡先：{isr.dept}</div>
-          <div>お問い合わせ：TEL {isr.tel}</div>
+          <div>連絡先：{isr.opsDept}</div>
+          <div>お問い合わせ：TEL {isr.tel}　FAX {isr.fax}</div>
+          <div>E-mail：{isr.contactEmail}</div>
+          <div>担当：{isr.contactPerson}</div>
         </div>
       </div>
 
       <div className="mt-3 text-[11px] text-slate-800">
-        <div>振込先：{isr.bankName} {isr.bankBranch}（{isr.bankType}）{isr.bankAccount}　{isr.bankAccountName}</div>
       </div>
 
       <div className="mt-3 border-t border-slate-300" />
@@ -1225,6 +1268,11 @@ export default function App() {
     issuerRep: ISSUER.rep,
     issuerAddress: ISSUER.address,
     issuerTel: ISSUER.tel,
+    issuerFax: ISSUER.fax,
+    issuerOpsDept: ISSUER.opsDept,
+    issuerOpsAddress: ISSUER.opsAddress,
+    issuerContactPerson: ISSUER.contactPerson,
+    issuerContactEmail: ISSUER.contactEmail,
     issuerBankName: ISSUER.bankName,
     issuerBankBranch: ISSUER.bankBranch,
     issuerBankType: ISSUER.bankType,
@@ -1232,6 +1280,7 @@ export default function App() {
     issuerBankAccountName: ISSUER.bankAccountName,
 
     inspectionReportNo: "",
+    inspectionIssueDate: new Date().toISOString().slice(0, 10),
     inspectionDate: "",
     inspectionOverall: "pass",
     inspectionDefectCount: 0,
@@ -1277,6 +1326,8 @@ export default function App() {
 
     includeInternalPlanDiffPage: true,
 
+
+    includeInternalPlanComparePage: true,
     workItems: [
       {
         id: uid("w"),
@@ -1350,12 +1401,18 @@ export default function App() {
   useEffect(() => {
     setData((prev) => {
       const nextQuotationNo = prev.quotationNo || suggestQuotationNo(prev.issueDate);
-      const nextInspectionNo = prev.inspectionReportNo || suggestInspectionReportNo(prev.issueDate);
-      const nextInspectionDate = prev.inspectionDate || prev.issueDate;
+
+      // 検査表は「見積書の発行日」と独立に運用されることが多いため、検査表専用の発行日を持つ。
+      // 未入力の場合は便宜上、見積書の発行日を候補として採る。
+      const inspIssue = prev.inspectionIssueDate || prev.issueDate;
+      const nextInspectionIssueDate = prev.inspectionIssueDate || prev.issueDate;
+      const nextInspectionNo = prev.inspectionReportNo || suggestInspectionReportNo(inspIssue);
+      const nextInspectionDate = prev.inspectionDate || inspIssue;
 
       if (
         nextQuotationNo === prev.quotationNo &&
         nextInspectionNo === prev.inspectionReportNo &&
+        nextInspectionIssueDate === prev.inspectionIssueDate &&
         nextInspectionDate === prev.inspectionDate
       ) {
         return prev;
@@ -1364,16 +1421,18 @@ export default function App() {
         ...prev,
         quotationNo: nextQuotationNo,
         inspectionReportNo: nextInspectionNo,
+        inspectionIssueDate: nextInspectionIssueDate,
         inspectionDate: nextInspectionDate,
       };
     });
-  }, [data.issueDate]);
+  }, [data.issueDate, data.inspectionIssueDate]);
 
 
   const calc = useMemo(() => computeCalc(data), [data]);
   const issuer = useMemo(() => issuerFromData(data), [data]);
   const quotationNo = data.quotationNo || suggestQuotationNo(data.issueDate);
-  const inspectionReportNo = data.inspectionReportNo || suggestInspectionReportNo(data.issueDate);
+  const inspectionIssueDate = data.inspectionIssueDate || data.issueDate;
+  const inspectionReportNo = data.inspectionReportNo || suggestInspectionReportNo(inspectionIssueDate);
   const specFlags = useMemo(
     () => deriveSpecFlags(data),
     [
@@ -1507,7 +1566,7 @@ export default function App() {
                             </div>
 
                           </Card>
-                          <Card title="1.5) 発行者・採番（見積No／検査報告No／振込先／押印欄）">
+                          <Card title="1.5) 発行者・採番（見積No／検査報告No／押印欄）">
                             <div className="grid grid-cols-2 gap-3">
                               <div className="col-span-2">
                                 <div className="flex items-end gap-2">
@@ -1516,7 +1575,7 @@ export default function App() {
                                       label="見積No"
                                       value={data.quotationNo}
                                       onChange={(v) => setData((p) => ({ ...p, quotationNo: v }))}
-                                      placeholder="例：KHQ-20260131-001"
+                                      placeholder="例：20260131-001"
                                     />
                                   </div>
                                   <button
@@ -1552,14 +1611,14 @@ export default function App() {
                                   <button
                                     type="button"
                                     className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                                    onClick={() => setData((p) => ({ ...p, inspectionReportNo: allocateInspectionReportNo(p.issueDate) }))}
+                                    onClick={() => setData((p) => ({ ...p, inspectionReportNo: allocateInspectionReportNo(p.inspectionIssueDate || p.issueDate) }))}
                                   >
                                     採番
                                   </button>
                                   <button
                                     type="button"
                                     className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-600 hover:bg-slate-50"
-                                    onClick={() => setData((p) => ({ ...p, inspectionReportNo: suggestInspectionReportNo(p.issueDate) }))}
+                                    onClick={() => setData((p) => ({ ...p, inspectionReportNo: suggestInspectionReportNo(p.inspectionIssueDate || p.issueDate) }))}
                                   >
                                     候補に戻す
                                   </button>
@@ -1570,28 +1629,44 @@ export default function App() {
                               </div>
 
                               <TextField label="発行者（会社名）" value={data.issuerOrg} onChange={(v) => setData((p) => ({ ...p, issuerOrg: v }))} />
-                              <TextField label="部署" value={data.issuerDept} onChange={(v) => setData((p) => ({ ...p, issuerDept: v }))} />
-                              <TextField label="代表者（任意）" value={data.issuerRep} onChange={(v) => setData((p) => ({ ...p, issuerRep: v }))} placeholder="例：代表取締役 ○○" />
-                              <TextField label="電話" value={data.issuerTel} onChange={(v) => setData((p) => ({ ...p, issuerTel: v }))} placeholder="例：03-0000-0000" />
+                              <TextField label="代表者" value={data.issuerRep} onChange={(v) => setData((p) => ({ ...p, issuerRep: v }))} disabled />
+                              <TextField label="本社部門" value={data.issuerDept} onChange={(v) => setData((p) => ({ ...p, issuerDept: v }))} placeholder="例：経営管理本部" />
+                              <TextField
+                                label="担当者（発行者側）"
+                                value={data.issuerContactPerson}
+                                onChange={(v) => setData((p) => ({ ...p, issuerContactPerson: v }))}
+                                placeholder="例：◯◯"
+                              />
+                              <TextField label="TEL（実務連絡先）" value={data.issuerTel} onChange={(v) => setData((p) => ({ ...p, issuerTel: v }))} disabled />
+                              <TextField label="FAX（実務連絡先）" value={data.issuerFax} onChange={(v) => setData((p) => ({ ...p, issuerFax: v }))} disabled />
+                              <TextField
+                                label="E-mail（実務連絡先）"
+                                value={data.issuerContactEmail}
+                                onChange={(v) => setData((p) => ({ ...p, issuerContactEmail: v }))}
+                                placeholder="例：e@kmsym.com"
+                              />
+
                               <div className="col-span-2">
                                 <TextField
-                                  label="住所"
+                                  label="本社住所"
                                   value={data.issuerAddress}
                                   onChange={(v) => setData((p) => ({ ...p, issuerAddress: v }))}
-                                  placeholder="〒000-0000 東京都○○区○○一丁目○番○号"
+                                  placeholder="東京都新宿区箪笥町5（経営管理本部）"
                                 />
                               </div>
 
-                              <TextField label="振込先：銀行名" value={data.issuerBankName} onChange={(v) => setData((p) => ({ ...p, issuerBankName: v }))} placeholder="○○銀行" />
-                              <TextField label="振込先：支店" value={data.issuerBankBranch} onChange={(v) => setData((p) => ({ ...p, issuerBankBranch: v }))} placeholder="○○支店" />
-                              <TextField label="振込先：預金種別" value={data.issuerBankType} onChange={(v) => setData((p) => ({ ...p, issuerBankType: v }))} placeholder="普通 / 当座" />
-                              <TextField label="振込先：口座番号" value={data.issuerBankAccount} onChange={(v) => setData((p) => ({ ...p, issuerBankAccount: v }))} placeholder="0000000" />
+                              <TextField
+                                label="実務部門"
+                                value={data.issuerOpsDept}
+                                onChange={(v) => setData((p) => ({ ...p, issuerOpsDept: v }))}
+                                placeholder="例：営業部・資材販売部・オペレーションセンター"
+                              />
                               <div className="col-span-2">
                                 <TextField
-                                  label="振込先：口座名義"
-                                  value={data.issuerBankAccountName}
-                                  onChange={(v) => setData((p) => ({ ...p, issuerBankAccountName: v }))}
-                                  placeholder="カ）コクサイマイクロシャシンコウギョウシャ"
+                                  label="実務連絡先住所"
+                                  value={data.issuerOpsAddress}
+                                  onChange={(v) => setData((p) => ({ ...p, issuerOpsAddress: v }))}
+                                  placeholder="〒162-0833　東京都新宿区箪笥町4-3（営業部・資材販売部・オペレーションセンター）"
                                 />
                               </div>
                             </div>
@@ -1635,7 +1710,6 @@ export default function App() {
                                 hint="入力と同時に、参考単価と内訳を確認できます。"
                               />
                               <div className="rounded-lg border bg-white px-3 py-2">
-                                <div className="text-xs text-slate-600">参考：基礎単価（{tierLabel(data.tier)}）</div>
                                 <div className="text-sm font-semibold tabular-nums">{fmtJPY(TIER_BASE_PER_UNIT[data.tier])} / 頁</div>
                                 <div className="text-xs text-slate-500">※ 実際の単価は加算・検査倍率を含みます。</div>
                               </div>
@@ -1745,6 +1819,13 @@ export default function App() {
                                 onChange={(v) => setData((p) => ({ ...p, includeInternalPlanDiffPage: v }))}
                                 hint="顧客提出用には含めない前提（内部用）。"
                               />
+
+                              <Checkbox
+                                label="内部用：3プラン比較表（価格差分一覧）を出力"
+                                checked={data.includeInternalPlanComparePage}
+                                onChange={(v) => setData((d) => ({ ...d, includeInternalPlanComparePage: v }))}
+                              />
+
                             </div>
 
                             <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2681,9 +2762,197 @@ export default function App() {
                   <div className="space-y-4">
                     {pages}
 
-                                      </div>
-                );
-              })()
+                    {data.includeInternalCalc && data.includeInternalPlanComparePage ? (
+                      (() => {
+                        const PRESET_INSPECTION: Record<Tier, InspectionLevel> = {
+                          economy: "sample",
+                          standard: "full",
+                          premium: "double_full",
+                        };
+
+                        const calcEco = computeCalc({ ...data, tier: "economy", inspectionLevel: PRESET_INSPECTION.economy });
+                        const calcStd = computeCalc({ ...data, tier: "standard", inspectionLevel: PRESET_INSPECTION.standard });
+                        const calcPre = computeCalc({ ...data, tier: "premium", inspectionLevel: PRESET_INSPECTION.premium });
+
+                        const plans: Array<{
+                          tier: Tier;
+                          label: string;
+                          inspection: InspectionLevel;
+                          calc: CalcResult;
+                        }> = [
+                          { tier: "economy", label: "エコノミー", inspection: PRESET_INSPECTION.economy, calc: calcEco },
+                          { tier: "standard", label: "スタンダード", inspection: PRESET_INSPECTION.standard, calc: calcStd },
+                          { tier: "premium", label: "プレミアム", inspection: PRESET_INSPECTION.premium, calc: calcPre },
+                        ];
+
+                        const maxTotal = Math.max(...plans.map((p) => p.calc.total), 1);
+
+                        const Bar = (props: { value: number }) => {
+                          const w = Math.max(0, Math.min(98, Math.round((props.value / maxTotal) * 98)));
+                          return (
+                            <svg viewBox="0 0 100 10" className="w-full h-[12px]">
+                              <rect x="0.5" y="0.5" width="99" height="9" fill="none" stroke="#94a3b8" strokeWidth="1" />
+                              <rect x="1" y="1" width={w} height="8" fill="#111827" />
+                            </svg>
+                          );
+                        };
+
+                        const TriBar = (props: { values: [number, number, number] }) => {
+                          const mx = Math.max(...props.values, 1);
+                          const ws = props.values.map((v) => Math.max(0, Math.min(98, Math.round((v / mx) * 98))));
+                          return (
+                            <svg viewBox="0 0 100 18" className="w-full h-[22px]">
+                              <rect x="0.5" y="0.5" width="99" height="17" fill="none" stroke="#94a3b8" strokeWidth="1" />
+                              <rect x="1" y="2" width={ws[0]} height="4" fill="#111827" />
+                              <rect x="1" y="7" width={ws[1]} height="4" fill="#6b7280" />
+                              <rect x="1" y="12" width={ws[2]} height="4" fill="#ffffff" stroke="#111827" strokeWidth="0.5" />
+                            </svg>
+                          );
+                        };
+
+                        const fixedSum = (tier: Tier) => PROJECT_FIXED_FEES[tier].setup + PROJECT_FIXED_FEES[tier].management;
+
+                        return (
+                          <DocPage
+                            header={<DocHeader docTitle="（内部用）見積比較表（3プラン）" data={data} showDueDate={false} />}
+                            footer={<DocFooter pageNo={1} totalPages={1} note="本頁は内部検討用であり、顧客提出物には含めない。" />}
+                          >
+                            <div className="text-[11px] text-slate-800 leading-relaxed">
+                              <div className="font-semibold text-slate-900 mb-1">1) 合計比較（税込）</div>
+                              <div className="text-slate-600 mb-3">
+                                同一の作業対象（数量・仕様）を前提に、プラン（Tier）と検査レベルの標準設定を変えた場合の、合計金額の比較である。
+                              </div>
+
+                              <div className="border border-slate-300">
+                                <table className="w-full text-[11px]">
+                                  <thead className="bg-slate-50">
+                                    <tr className="border-b border-slate-300">
+                                      <th className="py-2 px-2 text-left">プラン</th>
+                                      <th className="py-2 px-2 text-left">検査</th>
+                                      <th className="py-2 px-2 text-right">固定費（F0相当）</th>
+                                      <th className="py-2 px-2 text-right">合計（税込）</th>
+                                      <th className="py-2 px-2 text-left">相対比較</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {plans.map((p) => (
+                                      <tr key={p.tier} className="border-b border-slate-200">
+                                        <td className="py-2 px-2 font-semibold">{p.label}</td>
+                                        <td className="py-2 px-2">{inspectionLabel(p.inspection)}</td>
+                                        <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(fixedSum(p.tier))}</td>
+                                        <td className="py-2 px-2 text-right tabular-nums font-semibold">{fmtJPY(p.calc.total)}</td>
+                                        <td className="py-2 px-2">
+                                          <Bar value={p.calc.total} />
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              <div className="mt-5 font-semibold text-slate-900 mb-1">2) 価格ドライバー（プラン差分の主要因）</div>
+                              <div className="border border-slate-300">
+                                <table className="w-full text-[11px]">
+                                  <thead className="bg-slate-50">
+                                    <tr className="border-b border-slate-300">
+                                      <th className="py-2 px-2 text-left">項目</th>
+                                      <th className="py-2 px-2 text-right">エコノミー</th>
+                                      <th className="py-2 px-2 text-right">スタンダード</th>
+                                      <th className="py-2 px-2 text-right">プレミアム</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    <tr className="border-b border-slate-200">
+                                      <td className="py-2 px-2">L0 基礎単価（/単位）</td>
+                                      <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(TIER_BASE_PER_UNIT.economy)}</td>
+                                      <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(TIER_BASE_PER_UNIT.standard)}</td>
+                                      <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(TIER_BASE_PER_UNIT.premium)}</td>
+                                    </tr>
+                                    <tr className="border-b border-slate-200">
+                                      <td className="py-2 px-2">M1 検査倍率（標準設定）</td>
+                                      <td className="py-2 px-2 text-right tabular-nums">×{INSPECTION_MULTIPLIER[PRESET_INSPECTION.economy].toFixed(2)}</td>
+                                      <td className="py-2 px-2 text-right tabular-nums">×{INSPECTION_MULTIPLIER[PRESET_INSPECTION.standard].toFixed(2)}</td>
+                                      <td className="py-2 px-2 text-right tabular-nums">×{INSPECTION_MULTIPLIER[PRESET_INSPECTION.premium].toFixed(2)}</td>
+                                    </tr>
+                                    <tr className="border-b border-slate-200">
+                                      <td className="py-2 px-2">F0 案件固定費（初期＋進行管理）</td>
+                                      <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(fixedSum("economy"))}</td>
+                                      <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(fixedSum("standard"))}</td>
+                                      <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(fixedSum("premium"))}</td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              <div className="mt-5 font-semibold text-slate-900 mb-1">3) 作業対象別の比較（単価・金額）</div>
+                              <div className="text-slate-600 mb-2">
+                                下表は、作業対象（行）ごとに、3プランの単価と金額を横並びで示し、差分の発生源を一覧できるようにしたものである。
+                              </div>
+
+                              <div className="border border-slate-300">
+                                <table className="w-full text-[10.5px]">
+                                  <thead className="bg-slate-50">
+                                    <tr className="border-b border-slate-300">
+                                      <th className="py-2 px-2 text-left">作業対象</th>
+                                      <th className="py-2 px-2 text-right">数量</th>
+                                      <th className="py-2 px-2 text-right">Eco 単価</th>
+                                      <th className="py-2 px-2 text-right">Std 単価</th>
+                                      <th className="py-2 px-2 text-right">Pre 単価</th>
+                                      <th className="py-2 px-2 text-right">Eco 金額</th>
+                                      <th className="py-2 px-2 text-right">Std 金額</th>
+                                      <th className="py-2 px-2 text-right">Pre 金額</th>
+                                      <th className="py-2 px-2 text-left">相対（行内）</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {data.workItems.map((w) => {
+                                      const uEco = calcEco.unitBreakdowns[w.id]?.finalUnitPrice ?? 0;
+                                      const uStd = calcStd.unitBreakdowns[w.id]?.finalUnitPrice ?? 0;
+                                      const uPre = calcPre.unitBreakdowns[w.id]?.finalUnitPrice ?? 0;
+
+                                      const aEco = uEco * Math.max(0, w.qty);
+                                      const aStd = uStd * Math.max(0, w.qty);
+                                      const aPre = uPre * Math.max(0, w.qty);
+
+                                      return (
+                                        <tr key={w.id} className="border-b border-slate-200 align-top">
+                                          <td className="py-2 px-2">
+                                            <div className="font-semibold text-slate-900">{w.title}</div>
+                                            <div className="text-slate-600">
+                                              {sizeLabel(w.sizeClass)} / {colorModeLabel(w.colorMode)} / {dpiLabel(w.dpi)} / {joinFormats(w.formats)}
+                                            </div>
+                                          </td>
+                                          <td className="py-2 px-2 text-right tabular-nums">{num(w.qty)}{w.unit}</td>
+                                          <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(uEco)}</td>
+                                          <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(uStd)}</td>
+                                          <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(uPre)}</td>
+                                          <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(aEco)}</td>
+                                          <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(aStd)}</td>
+                                          <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(aPre)}</td>
+                                          <td className="py-2 px-2">
+                                            <TriBar values={[aEco, aStd, aPre]} />
+                                            <div className="mt-1 text-[10px] text-slate-600">
+                                              Eco / Std / Pre（黒 / 灰 / 白枠）
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              <div className="mt-4 text-[11px] text-slate-600">
+                                注：本頁の差分は「プラン差分（Tier 基礎単価・固定費）」と「検査レベル（標準設定の倍率）」に起因する。
+                                サイズ・色・dpi・形式・OCR・メタデータ・取扱等の加算は、作業対象の入力値に依存するため、プラン比較では同一条件として扱っている。
+                              </div>
+                            </div>
+                          </DocPage>
+                        );
+                      })()
+                    ) : null}
+                  </div>
+                );})()
             ) : null}
 
             {view === "spec" ? (
@@ -2734,8 +3003,123 @@ export default function App() {
               <div className="space-y-4">
                 {data.includeInspectionDoc ? (
                   <div className="space-y-4">
+
+                    <div className="no-print">
+                      <Card title="検査（最終入力 → 即印刷）">
+                        <div className="grid grid-cols-12 gap-4">
+                          <div className="col-span-7">
+                            <TextField
+                              label="検査報告No"
+                              value={data.inspectionReportNo}
+                              onChange={(v) => setData((p) => ({ ...p, inspectionReportNo: v }))}
+                              placeholder="INSP-YYYYMMDD-001"
+                            />
+                          </div>
+                          <div className="col-span-5 flex items-end gap-2">
+                            <TinyButton
+                              label="採番"
+                              kind="primary"
+                              onClick={() =>
+                                setData((p) => ({
+                                  ...p,
+                                  inspectionReportNo: allocateInspectionReportNo(p.inspectionIssueDate || p.issueDate),
+                                }))
+                              }
+                            />
+                            <TinyButton
+                              label="候補"
+                              onClick={() =>
+                                setData((p) => ({
+                                  ...p,
+                                  inspectionReportNo: suggestInspectionReportNo(p.inspectionIssueDate || p.issueDate),
+                                }))
+                              }
+                            />
+                          </div>
+
+                          <div className="col-span-6">
+                            <TextField
+                              label="発行日（検査報告書）"
+                              value={data.inspectionIssueDate}
+                              onChange={(v) => setData((p) => ({ ...p, inspectionIssueDate: v }))}
+                              placeholder="YYYY-MM-DD"
+                            />
+                          </div>
+                          <div className="col-span-6">
+                            <TextField
+                              label="検査実施日"
+                              value={data.inspectionDate}
+                              onChange={(v) => setData((p) => ({ ...p, inspectionDate: v }))}
+                              placeholder="YYYY-MM-DD"
+                            />
+                          </div>
+
+                          <div className="col-span-4">
+                            <SelectField
+                              label="総合判定"
+                              value={data.inspectionOverall}
+                              onChange={(v) => setData((p) => ({ ...p, inspectionOverall: v }))}
+                              options={[
+                                { value: "pass", label: "合格" },
+                                { value: "conditional", label: "条件付合格" },
+                                { value: "fail", label: "不合格" },
+                              ]}
+                            />
+                          </div>
+                          <div className="col-span-4">
+                            <NumberField
+                              label="不備件数"
+                              value={data.inspectionDefectCount}
+                              onChange={(v) => setData((p) => ({ ...p, inspectionDefectCount: Math.max(0, v) }))}
+                            />
+                          </div>
+                          <div className="col-span-4">
+                            <NumberField
+                              label="再作業件数"
+                              value={data.inspectionReworkCount}
+                              onChange={(v) => setData((p) => ({ ...p, inspectionReworkCount: Math.max(0, v) }))}
+                            />
+                          </div>
+
+                          <div className="col-span-4">
+                            <NumberField
+                              label="検査対象数（確認数）"
+                              value={data.inspectionCheckedCount}
+                              onChange={(v) => setData((p) => ({ ...p, inspectionCheckedCount: Math.max(0, v) }))}
+                            />
+                          </div>
+                          <div className="col-span-4">
+                            <TextField
+                              label="検査担当"
+                              value={data.inspectionInspector}
+                              onChange={(v) => setData((p) => ({ ...p, inspectionInspector: v }))}
+                              placeholder="（担当者名）"
+                            />
+                          </div>
+                          <div className="col-span-4">
+                            <TextField
+                              label="承認"
+                              value={data.inspectionApprover}
+                              onChange={(v) => setData((p) => ({ ...p, inspectionApprover: v }))}
+                              placeholder="（承認者名）"
+                            />
+                          </div>
+
+                          <div className="col-span-12">
+                            <TextAreaField
+                              label="検査所見（特記事項）"
+                              value={data.inspectionRemarks}
+                              onChange={(v) => setData((p) => ({ ...p, inspectionRemarks: v }))}
+                              placeholder="自由記入（印刷時はこの内容がそのまま反映されます）"
+                              rows={6}
+                            />
+                          </div>
+                        </div>
+                      </Card>
+                    </div>
+
                     <DocPage
-                      header={<DocHeader docTitle="検査結果報告書" data={data} />}
+                      header={<DocHeader docTitle="検査結果報告書" data={data} issueDateOverride={inspectionIssueDate} showDueDate={false} />}
                       footer={<DocFooter pageNo={1} totalPages={1} note="" />}
                     >
                       <div className="mb-4 text-sm leading-relaxed text-slate-800">
@@ -2750,7 +3134,7 @@ export default function App() {
                           <div>
                             総合判定：{inspectionOverallLabel(data.inspectionOverall)}　/　不備件数：{Math.max(0, data.inspectionDefectCount)}　/　再作業件数：{Math.max(0, data.inspectionReworkCount)}
                           </div>
-                          <div>発行日：{formatJPDate(data.issueDate)}</div>
+                          <div>発行日：{formatJPDate(inspectionIssueDate)}</div>
                         </div>
                       </div>
 
