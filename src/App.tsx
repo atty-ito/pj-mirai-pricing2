@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, FormEvent } from "react";
+import { useState, useMemo, useEffect, useRef, ChangeEvent, FormEvent } from "react";
 import { Data, ViewKey, WorkItem, MiscExpense } from "./types/pricing";
 import { computeCalc } from "./utils/calculations";
 import { suggestQuotationNo, suggestInspectionReportNo, uid } from "./utils/formatters";
@@ -31,15 +31,12 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-slate-900 relative overflow-hidden">
-      {/* 背景装飾（アニメーション付きグラデーション） */}
       <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-[#0f172a] to-[#1e1b4b]" />
       <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] bg-indigo-600/20 rounded-full blur-[100px] animate-pulse" />
       <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] bg-blue-600/20 rounded-full blur-[100px] animate-pulse" style={{ animationDelay: "2s" }} />
 
-      {/* ログインカード */}
       <div className="relative z-10 w-full max-w-sm mx-4">
         <div className="bg-white/10 backdrop-blur-md border border-white/10 rounded-3xl shadow-2xl p-8 overflow-hidden">
-          {/* 光の反射エフェクト */}
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-white/30 to-transparent" />
 
           <div className="text-center mb-8">
@@ -100,8 +97,9 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
 // ---- メインアプリケーション ----
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // セッションストレージでログイン状態を維持（ブラウザを閉じるまで）
+  // セッションストレージでログイン状態を維持
   useEffect(() => {
     if (sessionStorage.getItem("khq_auth") === "true") {
       setIsAuthenticated(true);
@@ -273,6 +271,7 @@ export default function App() {
 
   const calc = useMemo(() => computeCalc(data), [data]);
 
+  // --- データ操作ハンドラ ---
   const addWorkItem = () => {
     setData((p) => ({
       ...p,
@@ -319,6 +318,62 @@ export default function App() {
     setData((p) => ({ ...p, miscExpenses: p.miscExpenses.map((m) => (m.id === id ? { ...m, ...patch } : m)) }));
   };
 
+  // --- 保存・読込ハンドラ ---
+  
+  // 1. JSONエクスポート
+  const handleSaveData = () => {
+    const jsonString = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    
+    // ファイル名生成: KHQ_顧客名_日付.json
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const safeClientName = (data.clientName || "案件データ").replace(/[\\/:*?"<>|]/g, "_");
+    const fileName = `KHQ_${safeClientName}_${dateStr}.json`;
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // 2. JSONインポート（ファイル選択トリガー）
+  const handleClickLoad = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""; // 同じファイルを再度選べるようにリセット
+      fileInputRef.current.click();
+    }
+  };
+
+  // 3. JSONインポート（実処理）
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target?.result as string;
+        const loadedData = JSON.parse(text);
+        
+        // 簡易バリデーション：必須プロパティの存在確認
+        if (!loadedData || typeof loadedData !== "object" || !Array.isArray(loadedData.workItems)) {
+          alert("エラー：無効なデータ形式です。");
+          return;
+        }
+
+        // データの適用
+        setData(loadedData as Data);
+        alert("データを読み込みました。");
+      } catch (err) {
+        console.error(err);
+        alert("エラー：ファイルの読み込みに失敗しました。");
+      }
+    };
+    reader.readAsText(file);
+  };
+
   // 認証チェック
   if (!isAuthenticated) {
     return <LoginView onLogin={handleLogin} />;
@@ -345,6 +400,45 @@ export default function App() {
           <div className="text-right text-xs text-slate-500">
             <div className="flex items-center justify-end gap-3 mb-1">
               <div className="px-3 py-1 bg-slate-100 rounded-full font-mono text-slate-600 border border-slate-200">Ver 24.10</div>
+              
+              {/* 保存ボタン */}
+              <button
+                type="button"
+                onClick={handleSaveData}
+                className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-emerald-500 hover:shadow-lg active:translate-y-0.5"
+                title="現在のデータをJSONファイルとして保存"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
+                  <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
+                </svg>
+                保存
+              </button>
+
+              {/* 読込ボタン */}
+              <button
+                type="button"
+                onClick={handleClickLoad}
+                className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-indigo-500 hover:shadow-lg active:translate-y-0.5"
+                title="JSONファイルを読み込んでデータを復元"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M9.25 13.25a.75.75 0 0 0 1.5 0V4.636l2.955 3.129a.75.75 0 0 0 1.09-1.03l-4.25-4.5a.75.75 0 0 0-1.09 0l-4.25 4.5a.75.75 0 1 0 1.09 1.03l2.955-3.129v8.614Z" />
+                  <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
+                </svg>
+                読込
+              </button>
+              
+              {/* ファイル選択用（非表示） */}
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileChange} 
+                className="hidden" 
+                accept=".json,application/json"
+              />
+
+              {/* 印刷ボタン */}
               <button
                 type="button"
                 className="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-slate-800 hover:shadow-lg active:translate-y-0.5"
