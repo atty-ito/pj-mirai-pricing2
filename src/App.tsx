@@ -3147,7 +3147,77 @@ export default function App() {
               </div>
             ) : null}
 
-            {view === "inspection" ? (
+            
+            {view === "spec" ? (
+              <div className="space-y-4">
+                {data.includeSpecDoc ? (
+                  (() => {
+                    const sections = buildSpecSections(data);
+                    const profileLabel = specProfilePublicLabel(data.specProfile);
+                    const flags = deriveSpecFlags(data);
+
+                    return (
+                      <div className="print-area space-y-4">
+                        <div className="no-print">
+                          <Card title="仕様書（最終入力 → 即印刷）" tone="slate" subtitle="規格プロファイルに応じて内容が自動展開されます。">
+                            <div className="grid grid-cols-12 gap-4 text-sm">
+                              <div className="col-span-12 md:col-span-4">
+                                <div className="text-slate-600">規格プロファイル</div>
+                                <div className="font-semibold text-slate-900">{profileLabel}</div>
+                              </div>
+                              <div className="col-span-12 md:col-span-8">
+                                <div className="text-slate-600">要件フラグ</div>
+                                <div className="mt-1 flex flex-wrap gap-2">
+                                  <span className={"rounded-full px-3 py-1 text-xs font-semibold " + (flags.requireMedia ? "bg-teal-100 text-teal-800" : "bg-slate-100 text-slate-600")}>
+                                    媒体要件 {flags.requireMedia ? "必須" : "任意"}
+                                  </span>
+                                  <span className={"rounded-full px-3 py-1 text-xs font-semibold " + (flags.requireMetadata ? "bg-teal-100 text-teal-800" : "bg-slate-100 text-slate-600")}>
+                                    メタデータ {flags.requireMetadata ? "必須" : "任意"}
+                                  </span>
+                                  <span className={"rounded-full px-3 py-1 text-xs font-semibold " + (flags.fullInspection ? "bg-teal-100 text-teal-800" : "bg-slate-100 text-slate-600")}>
+                                    検査 {flags.fullInspection ? "全数相当" : "抜取/任意"}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </Card>
+                        </div>
+
+                        <div className="bg-white rounded-xl border border-slate-200 p-6">
+                          <DocHeader docTitle="仕様書" data={data} showDueDate={false} />
+                          <div className="mt-1 text-sm text-slate-800">
+                            <div className="font-semibold text-slate-900">件名：{data.projectName || "（案件名）"}</div>
+                            <div className="mt-1 text-slate-700">
+                              プラン：<span className="font-medium">{tierLabel(data.tier)}</span> ／ 検査：<span className="font-medium">{inspectionLabel(data.inspectionLevel)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {sections.length === 0 ? (
+                          <div className="text-sm text-slate-600">
+                            仕様書の項目が生成されませんでした（入力内容を確認してください）。
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            {sections.map((s, idx) => (
+                              <Card key={idx} title={`${idx + 1}. ${s.title}`} tone="slate">
+                                <pre className="whitespace-pre-wrap text-[13px] leading-relaxed text-slate-800">{s.body}</pre>
+                              </Card>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <div className="text-sm text-slate-600">
+                    「入力画面」で <span className="font-semibold">仕様書を出力</span> をONにすると表示されます。
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+{view === "inspection" ? (
               <div className="space-y-4">
                 {data.includeInspectionDoc ? (
                   <div className="space-y-4">
