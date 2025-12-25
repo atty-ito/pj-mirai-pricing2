@@ -1003,15 +1003,16 @@ function specProfilePublicLabel(p: SpecProfile) {
 const ISSUER = {
   org: "株式会社国際マイクロ写真工業社",
   rep: "代表取締役　森 松 義 喬",
-  dept: "経営管理本部",
-  address: "東京都新宿区箪笥町5（経営管理本部）",
+  hqDept: "経営管理本部",
+  hqAddress: "東京都新宿区箪笥町5（経営管理本部）",
   opsDept: "営業部・資材販売部・オペレーションセンター",
   opsAddress: "〒162-0833　東京都新宿区箪笥町4-3（営業部・資材販売部・オペレーションセンター）",
   tel: "03-3260-5931",
   fax: "03-3269-4387",
   contactPerson: "◯◯",
   contactEmail: "e@kmsym.com",
-  // 振込先情報は「見積書」では原則として非表示（請求書等で必要になった場合に使用）
+
+  // 請求書等で用いる可能性があるため保持（見積段階では帳票に出さない）
   bankName: "○○銀行",
   bankBranch: "○○支店",
   bankType: "普通",
@@ -1024,21 +1025,22 @@ function issuerFromData(d: Data) {
     org: d.issuerOrg || ISSUER.org,
     // 「代表者」「TEL」「FAX」は社内で固定値として扱う（誤入力を防ぐ）
     rep: ISSUER.rep,
-    hqDept: d.issuerDept || ISSUER.dept,
-    hqAddress: d.issuerAddress || ISSUER.address,
+    hqDept: d.issuerDept || ISSUER.hqDept,
+    hqAddress: d.issuerAddress || ISSUER.hqAddress,
     opsDept: d.issuerOpsDept || ISSUER.opsDept,
     opsAddress: d.issuerOpsAddress || ISSUER.opsAddress,
-    tel: d.issuerTel || ISSUER.tel,
-    fax: d.issuerFax || ISSUER.fax,
+    tel: ISSUER.tel,
+    fax: ISSUER.fax,
     contactPerson: d.issuerContactPerson || ISSUER.contactPerson,
     contactEmail: d.issuerContactEmail || ISSUER.contactEmail,
-    bankName: d.issuerBankName || ISSUER.bankName,
-    bankBranch: d.issuerBankBranch || ISSUER.bankBranch,
-    bankType: d.issuerBankType || ISSUER.bankType,
-    bankAccount: d.issuerBankAccount || ISSUER.bankAccount,
-    bankAccountName: d.issuerBankAccountName || ISSUER.bankAccountName,
+    bankName: d.bankName || ISSUER.bankName,
+    bankBranch: d.bankBranch || ISSUER.bankBranch,
+    bankType: d.bankType || ISSUER.bankType,
+    bankAccount: d.bankAccount || ISSUER.bankAccount,
+    bankAccountName: d.bankAccountName || ISSUER.bankAccountName,
   };
 }
+
 
 function SealBox(props: { label?: string }) {
   return (
@@ -1076,10 +1078,8 @@ function DocHeader(props: { docTitle: string; data: Data; issueDateOverride?: st
             <div className="text-right">
               <div className="font-semibold">{isr.org}</div>
               <div>{isr.rep}</div>
-              <div className="mt-1">本社：{isr.hqDept}</div>
               <div>{isr.hqAddress}</div>
-              <div className="mt-1">実務連絡先：{isr.opsDept}</div>
-              <div>{isr.opsAddress}</div>
+              <div>連絡先：{isr.opsAddress}</div>
               <div>TEL {isr.tel}　FAX {isr.fax}</div>
               <div>E-mail {isr.contactEmail}</div>
               <div>担当 {isr.contactPerson}</div>
@@ -1120,10 +1120,8 @@ function EstimateCoverHeader(props: { data: Data; totalAmount: number }) {
             <div className="text-right">
               <div className="font-semibold">{isr.org}</div>
               <div>{isr.rep}</div>
-              <div className="mt-1">本社：{isr.hqDept}</div>
               <div>{isr.hqAddress}</div>
-              <div className="mt-1">実務連絡先：{isr.opsDept}</div>
-              <div>{isr.opsAddress}</div>
+              <div>連絡先：{isr.opsAddress}</div>
               <div>TEL {isr.tel}　FAX {isr.fax}</div>
               <div>E-mail {isr.contactEmail}</div>
               <div>担当 {isr.contactPerson}</div>
@@ -1161,7 +1159,7 @@ function EstimateCoverHeader(props: { data: Data; totalAmount: number }) {
         </div>
         <div>
           <div>有効期限：発行日より1ヶ月</div>
-          <div>連絡先：{isr.opsDept}</div>
+          <div>連絡先：{isr.opsAddress}</div>
           <div>お問い合わせ：TEL {isr.tel}　FAX {isr.fax}</div>
           <div>E-mail：{isr.contactEmail}</div>
           <div>担当：{isr.contactPerson}</div>
@@ -1233,12 +1231,13 @@ function PrintStyles() {
 // ---- メイン ----
 
 
-type ViewKey = "input" | "instruction" | "estimate" | "spec" | "inspection";
+type ViewKey = "input" | "instruction" | "estimate" | "compare" | "spec" | "inspection";
 
 const VIEW_ITEMS: Array<{ key: ViewKey; label: string; hint: string }> = [
   { key: "input", label: "入力画面", hint: "案件条件・単価・スイッチ" },
   { key: "instruction", label: "指示書", hint: "内部用 作業指示書" },
   { key: "estimate", label: "見積もり", hint: "顧客提出用 見積書" },
+  { key: "compare", label: "比較（内部）", hint: "内部用 見積比較" },
   { key: "spec", label: "仕様", hint: "仕様書（標準に連動）" },
   { key: "inspection", label: "検査", hint: "検査表（全数/抜取など）" },
 ];
@@ -1264,9 +1263,9 @@ export default function App() {
   const [data, setData] = useState<Data>(() => ({
     quotationNo: "",
     issuerOrg: ISSUER.org,
-    issuerDept: ISSUER.dept,
+    issuerDept: ISSUER.hqDept,
     issuerRep: ISSUER.rep,
-    issuerAddress: ISSUER.address,
+    issuerAddress: ISSUER.hqAddress,
     issuerTel: ISSUER.tel,
     issuerFax: ISSUER.fax,
     issuerOpsDept: ISSUER.opsDept,
@@ -2762,7 +2761,19 @@ export default function App() {
                   <div className="space-y-4">
                     {pages}
 
-                    {data.includeInternalCalc && data.includeInternalPlanComparePage ? (
+                    {/* internal compare moved to compare tab */}
+                  </div>
+                );})()
+            ) : null}
+
+            
+            {view === "compare" ? (
+              <div className="print-area">
+                <div className="space-y-4">
+                  <div className="no-print text-[12px] text-slate-700">
+                    本タブは内部検討用であり、顧客提出物（見積書・仕様書・検査結果報告書）に混入させないこと。
+                  </div>
+                  {data.includeInternalCalc && data.includeInternalPlanComparePage ? (
                       (() => {
                         const PRESET_INSPECTION: Record<Tier, InspectionLevel> = {
                           economy: "sample",
@@ -2884,6 +2895,37 @@ export default function App() {
                                 </table>
                               </div>
 
+                              <div className="mt-4 font-semibold text-slate-900 mb-1">L0 基礎単価差分の由来</div>
+                              <div className="text-slate-600 mb-2">
+                                L0（基礎単価）は、単価算定の最初の層であり、コード上は <span className="font-mono">TIER_BASE_PER_UNIT</span> によりプランごとに固定される。
+                                サイズ・色・dpi・形式・OCR・メタデータ・取扱等の加算（L1〜）や、検査倍率（M1）とは独立である。
+                                したがって、プラン間の L0 差は、「基礎単価表（プラン別）」の差に起因する。
+                                この表は、当社が想定する基本作業負荷・品質責任の水準差（工程内是正の前提、レビュー工数、差戻し対応の厚み等）を反映するための設計値である。
+                              </div>
+
+                              <div className="border border-slate-300 mb-2">
+                                <table className="w-full text-[11px]">
+                                  <thead className="bg-slate-50">
+                                    <tr className="border-b border-slate-300">
+                                      <th className="py-2 px-2 text-left">プラン</th>
+                                      <th className="py-2 px-2 text-right">L0 基礎単価（税抜・1単位）</th>
+                                      <th className="py-2 px-2 text-right">対エコノミー差</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(["economy","standard","premium"] as Tier[]).map((t) => (
+                                      <tr key={t} className="border-b border-slate-200">
+                                        <td className="py-2 px-2">{tierLabel(t)}</td>
+                                        <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(TIER_BASE_PER_UNIT[t])}</td>
+                                        <td className="py-2 px-2 text-right tabular-nums">
+                                          {t === "economy" ? "—" : fmtJPY(TIER_BASE_PER_UNIT[t] - TIER_BASE_PER_UNIT["economy"])}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+
                               <div className="mt-5 font-semibold text-slate-900 mb-1">3) 作業対象別の比較（単価・金額）</div>
                               <div className="text-slate-600 mb-2">
                                 下表は、作業対象（行）ごとに、3プランの単価と金額を横並びで示し、差分の発生源を一覧できるようにしたものである。
@@ -2951,11 +2993,11 @@ export default function App() {
                         );
                       })()
                     ) : null}
-                  </div>
-                );})()
+                </div>
+              </div>
             ) : null}
 
-            {view === "spec" ? (
+{view === "spec" ? (
               <div className="print-area">
                 {(() => {
                   const sections = buildSpecSections(data);
@@ -3189,7 +3231,7 @@ export default function App() {
                       <div className="mt-8 grid grid-cols-3 gap-6 text-sm text-slate-800">
                         <div>
                           <div className="border-t pt-2">
-                            検査担当：{data.inspectionInspector || `${issuer.dept}（担当）`}
+                            検査担当：{data.inspectionInspector || `${issuer.opsDept || issuer.hqDept}（担当）`}
                             <InlineSealBox />
                           </div>
                         </div>
