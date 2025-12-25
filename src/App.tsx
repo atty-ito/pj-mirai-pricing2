@@ -489,7 +489,44 @@ function computeCalc(data: Data): CalcResult {
     });
   }
 
-  // 2) 案件単位の固定費
+  // 2) 特殊工程・実費（自由入力）
+  // - 旧：品目＋金額（amount）だけ
+  // - 新：品目＋数量＋単価（qty × unitPrice）も扱える（amount は最終の税抜金額）
+  for (const m of data.miscExpenses) {
+    const label = (m.label ?? "").trim();
+
+    const qty = Math.max(0, toInt(m.qty ?? 1, 1));
+    const unit = (m.unit ?? "式").trim() || "式";
+
+    // unitPrice が未設定でも旧データ互換として amount を単価扱いにできるよう補完する
+    const unitPrice =
+      m.unitPrice != null
+        ? Math.max(0, Math.round(m.unitPrice))
+        : qty > 0
+          ? Math.max(0, Math.round(m.amount / qty))
+          : Math.max(0, Math.round(m.amount));
+
+    // 旧互換：qty/unit/unitPrice が未入力なら amount をそのまま採る（単価＝合計）
+    const amount =
+      m.unitPrice != null || m.qty != null || m.unit != null
+        ? Math.max(0, Math.round(qty * unitPrice))
+        : Math.max(0, Math.round(m.amount));
+
+    if (!label && amount === 0) continue;
+
+    lineItems.push({
+      kind: "misc",
+      label: label || "特殊工程・実費",
+      qty: qty || 1,
+      unit,
+      unitPrice,
+      amount,
+    });
+  }
+
+  
+
+// 3) 案件単位の固定費
   const fixed = PROJECT_FIXED_FEES[data.tier];
   lineItems.push({
     kind: "fixed",
@@ -508,7 +545,7 @@ function computeCalc(data: Data): CalcResult {
     amount: fixed.management,
   });
 
-  // 3) 付帯（定額）
+  // 4) 付帯（定額）
   if (data.includeFumigation) {
     lineItems.push({
       kind: "addon",
@@ -557,41 +594,6 @@ function computeCalc(data: Data): CalcResult {
       unit: "式",
       unitPrice: ADDON_FIXED_FEES.encryption,
       amount: ADDON_FIXED_FEES.encryption,
-    });
-  }
-
-  // 4) 特殊工程・実費（自由入力）
-  // - 旧：品目＋金額（amount）だけ
-  // - 新：品目＋数量＋単価（qty × unitPrice）も扱える（amount は最終の税抜金額）
-  for (const m of data.miscExpenses) {
-    const label = (m.label ?? "").trim();
-
-    const qty = Math.max(0, toInt(m.qty ?? 1, 1));
-    const unit = (m.unit ?? "式").trim() || "式";
-
-    // unitPrice が未設定でも旧データ互換として amount を単価扱いにできるよう補完する
-    const unitPrice =
-      m.unitPrice != null
-        ? Math.max(0, Math.round(m.unitPrice))
-        : qty > 0
-          ? Math.max(0, Math.round(m.amount / qty))
-          : Math.max(0, Math.round(m.amount));
-
-    // 旧互換：qty/unit/unitPrice が未入力なら amount をそのまま採る（単価＝合計）
-    const amount =
-      m.unitPrice != null || m.qty != null || m.unit != null
-        ? Math.max(0, Math.round(qty * unitPrice))
-        : Math.max(0, Math.round(m.amount));
-
-    if (!label && amount === 0) continue;
-
-    lineItems.push({
-      kind: "misc",
-      label: label || "特殊工程・実費",
-      qty: qty || 1,
-      unit,
-      unitPrice,
-      amount,
     });
   }
 
@@ -857,11 +859,54 @@ function buildSpecSections(data: Data): SpecSection[] {
 
 // ---- UI部品 ----
 
-function Card(props: { title: string; children: ReactNode; right?: ReactNode }) {
+type CardTone = "slate" | "indigo" | "emerald" | "amber" | "rose";
+
+const CARD_TONE: Record<CardTone, { outer: string; header: string; dot: string }> = {
+  slate: {
+    outer: "border-l-4 border-l-slate-400 print:border-l-0",
+    header: "bg-slate-50/60 print:bg-white",
+    dot: "bg-slate-500",
+  },
+  indigo: {
+    outer: "border-l-4 border-l-indigo-500 print:border-l-0",
+    header: "bg-indigo-50/50 print:bg-white",
+    dot: "bg-indigo-500",
+  },
+  emerald: {
+    outer: "border-l-4 border-l-emerald-500 print:border-l-0",
+    header: "bg-emerald-50/50 print:bg-white",
+    dot: "bg-emerald-500",
+  },
+  amber: {
+    outer: "border-l-4 border-l-amber-500 print:border-l-0",
+    header: "bg-amber-50/60 print:bg-white",
+    dot: "bg-amber-500",
+  },
+  rose: {
+    outer: "border-l-4 border-l-rose-500 print:border-l-0",
+    header: "bg-rose-50/50 print:bg-white",
+    dot: "bg-rose-500",
+  },
+};
+
+function Card(props: { title: string; children: ReactNode; right?: ReactNode; tone?: CardTone; subtitle?: string }) {
+  const tone: CardTone = props.tone ?? "slate";
+  const t = CARD_TONE[tone];
   return (
-    <div className="print-page rounded-2xl border bg-white shadow-sm print:rounded-none print:border-0 print:shadow-none">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <div className="text-sm font-semibold text-slate-800">{props.title}</div>
+    <div
+      className={[
+        "print-page rounded-2xl border bg-white shadow-sm print:rounded-none print:border-0 print:shadow-none",
+        t.outer,
+      ].join(" ")}
+    >
+      <div className={["flex items-center justify-between border-b px-4 py-3 print:bg-white", t.header].join(" ")}>
+        <div className="flex items-start gap-2">
+          <span className={["mt-1 inline-block h-2.5 w-2.5 rounded-full print:hidden", t.dot].join(" ")} />
+          <div>
+            <div className="text-sm font-semibold text-slate-800">{props.title}</div>
+            {props.subtitle ? <div className="mt-0.5 text-xs text-slate-500">{props.subtitle}</div> : null}
+          </div>
+        </div>
         {props.right}
       </div>
       <div className="p-4">{props.children}</div>
@@ -886,7 +931,7 @@ function TextField(props: {
       <Label>{props.label}</Label>
       <input
         className={[
-          "w-full rounded-lg border px-3 py-2 text-sm",
+          "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400",
           disabled ? "bg-slate-50 text-slate-600" : "bg-white",
         ].join(" ")}
         value={String(props.value)}
@@ -909,7 +954,7 @@ function TextAreaField(props: {
     <div>
       <Label>{props.label}</Label>
       <textarea
-        className="w-full rounded-lg border px-3 py-2 text-sm"
+        className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
         value={String(props.value)}
         placeholder={props.placeholder}
         rows={props.rows ?? 4}
@@ -932,7 +977,7 @@ function NumberField(props: {
       <Label>{props.label}</Label>
       <div className="flex items-center gap-2">
         <input
-          className="w-full rounded-lg border px-3 py-2 text-sm"
+          className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
           type="number"
           min={props.min ?? 0}
           step={props.step ?? 1}
@@ -956,7 +1001,7 @@ function SelectField<T extends string | number>(props: {
     <div>
       <Label>{props.label}</Label>
       <select
-        className="w-full rounded-lg border px-3 py-2 text-sm"
+        className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
         value={String(props.value)}
         onChange={(e) => {
           const raw = e.target.value;
@@ -1597,7 +1642,7 @@ export default function App() {
           <main className="min-w-0 flex-1">
             {view === "input" ? (
               <div className="space-y-4">
-                          <Card title="1) 基本情報">
+                          <Card title="1) 基本情報" tone="slate" subtitle="宛先・件名・日付など（見積／仕様／検査で共通）">
                             <div className="grid grid-cols-2 gap-3">
                               <TextField label="顧客名" value={data.clientName} onChange={(v) => setData((p) => ({ ...p, clientName: v }))} />
                               <TextField label="案件名" value={data.projectName} onChange={(v) => setData((p) => ({ ...p, projectName: v }))} />
@@ -1616,7 +1661,7 @@ export default function App() {
                             </div>
 
                           </Card>
-                          <Card title="1.5) 発行者・採番（見積No／検査報告No／押印欄）">
+                          <Card title="1.5) 発行者・採番（見積No／検査報告No／押印欄）" tone="slate" subtitle="発行名義・連絡先（見積書ヘッダ表示）">
                             <div className="grid grid-cols-2 gap-3">
                               <div className="col-span-2">
                                 <div className="flex items-end gap-2">
@@ -1722,7 +1767,7 @@ export default function App() {
                             </div>
                           </Card>
 
-                          <Card title="2) プランと検査">
+                          <Card title="2) プランと検査" tone="amber" subtitle="単価に最も影響する選択">
                             <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-3">
                               <div className="text-xs font-semibold text-slate-700">価格に最も影響する選択（プラン／検査）</div>
                               <div className="mt-2 grid grid-cols-2 gap-3">
@@ -1766,7 +1811,7 @@ export default function App() {
                             </div>
                           </Card>
 
-                          <Card title="3) 仕様レベル（標準／詳細／厳格）">
+                          <Card title="3) 仕様レベル（標準／詳細／厳格）" tone="emerald" subtitle="仕様書の分量と厳格度">
                             <div className="grid grid-cols-2 gap-3">
                               <SelectField<SpecProfile>
                                 label="仕様プロファイル"
@@ -1817,7 +1862,7 @@ export default function App() {
                             )}
                           </Card>
 
-                          <Card title="4) 付帯・出力設定">
+                          <Card title="4) 付帯・出力設定" tone="indigo" subtitle="提出物の出力ページ／付帯作業のON/OFF">
                             <div className="grid grid-cols-2 gap-3">
                               <Checkbox
                                 label="顧客提出用：見積書を出力"
@@ -1913,7 +1958,7 @@ export default function App() {
                             </div>
                           </Card>
 
-                          <Card title="5) 検査結果（提出用：合否・件数・再作業）">
+                          <Card title="5) 検査結果（提出用：合否・件数・再作業）" tone="indigo" subtitle="提出用検査表に反映されます">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               <TextField
                                 label="検査実施日"
@@ -1981,6 +2026,8 @@ export default function App() {
 
                           <Card
                             title="6) 対象資料（行ごとに単価が変わる）"
+                            tone="emerald"
+                            subtitle="サイズ・形式・OCR等により単価が変動します"
                             right={<TinyButton label="＋行を追加" onClick={addWorkItem} kind="primary" />}
                           >
                             <div className="space-y-4">
@@ -2154,7 +2201,9 @@ export default function App() {
                           </Card>
 
                           <Card
-                            title="6) 特殊工程・実費（自由入力：品目＋数量＋単価 → 見積反映）"
+                            title="7) 特殊工程・実費（自由入力：品目＋数量＋単価 → 見積反映）"
+                            tone="rose"
+                            subtitle="大型図面・撮影・前処理など、標準単価モデル外をここで吸収"
                             right={<TinyButton label="＋追加" onClick={addMiscExpense} kind="primary" />}
                           >
                             {data.miscExpenses.length === 0 ? (
@@ -2244,7 +2293,7 @@ export default function App() {
                             )}
                           </Card>
 
-                          <Card title="7) 概算合計（税抜・税込）">
+                          <Card title="8) 概算合計（税抜・税込）" tone="slate" subtitle="入力内容の概算（見積書の自動計算結果）">
                             <div className="grid grid-cols-3 gap-3">
                               <div className="rounded-xl border bg-white p-3">
                                 <div className="text-xs text-slate-600">小計（税抜）</div>
