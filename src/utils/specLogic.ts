@@ -4,11 +4,13 @@ import { num, sizeLabel, colorModeLabel, dpiLabel, metadataLabel, handlingLabel,
 export type SpecSection = { title: string; body: string };
 
 /**
- * 仕様書のセクション生成ロジック（App.tsxより完全移植）
+ * データに基づき仕様書のセクションを構築する（完全版）
+ * 元のApp.tsxに含まれていた全ての日本語テキストと条件分岐を復元
  */
 export function buildSpecSections(data: Data): SpecSection[] {
-  const profile = data.specProfile; // internal key only
-  // フラグ判定ロジックも元コードから復元
+  const profile = data.specProfile; 
+  
+  // フラグ判定ロジックの復元
   const requireMedia =
     data.specProfile === "gunma" ? data.gunmaMediaRequirements : data.specProfile === "ndl";
   const requireMetadata =
@@ -16,12 +18,13 @@ export function buildSpecSections(data: Data): SpecSection[] {
   const fullInspection = data.specProfile === "gunma" ? data.gunmaAllInspection : (data.inspectionLevel === "full" || data.inspectionLevel === "double_full");
   
   const flags = { requireMedia, requireMetadata, fullInspection };
-  const level = specProfilePublicLabel(profile); // 標準／詳細／厳格（表示用）
+  const level = specProfilePublicLabel(profile); 
 
   const sections: SpecSection[] = [];
   const push = (title: string, bodyLines: string[]) => sections.push({ title, body: bodyLines.join("\n") });
 
   const hasAny = (s: string) => (s ?? "").trim().length > 0;
+  
   const workItemSummary = data.workItems
     .map(
       (w) =>
@@ -29,7 +32,7 @@ export function buildSpecSections(data: Data): SpecSection[] {
           w.dpi,
         )}／形式 ${w.formats.join("・")}／OCR ${w.ocr ? "有" : "無"}／メタデータ ${metadataLabel(w.metadataLevel)}／取扱 ${handlingLabel(
           w.handling,
-        )}`,
+        )}`
     )
     .join("\n");
 
@@ -54,7 +57,7 @@ export function buildSpecSections(data: Data): SpecSection[] {
     "裁断の有無、非裁断資料の開き角、背割れ等、物理的制約が画質に影響する場合は、無理な矯正を避け、別途ログに記録する（9章）。",
   ]);
 
-  // 4 トリミング・余白・見開き等（詳細／厳格で増補）
+  // 4 トリミング・余白・見開き等
   const trimLines = [
     "トリミングは、原則として資料の外周を欠かさず取得しつつ、不要な余白を過度に残さない。",
     "標準では、軽微な傾き補正・余白調整に留め、内容改変に該当する補正は行わない。",
@@ -67,7 +70,7 @@ export function buildSpecSections(data: Data): SpecSection[] {
   }
   push("4. トリミング・判型・特殊ページ", trimLines);
 
-  // 5 折込・大判・薄紙等（詳細／厳格）
+  // 5 折込・大判・薄紙等
   if (profile !== "standard") {
     push("5. 折込・大判・薄紙等の取扱い（詳細）", [
       "折込（複数回折り）等の特殊ページは、折り畳み状態の全体像を撮影した後、段階的に展開して撮影する（展開手順がある場合はそれに従う）。",
@@ -77,7 +80,7 @@ export function buildSpecSections(data: Data): SpecSection[] {
     ]);
   }
 
-  // 6 画質基準・品質検査（標準→詳細→厳格で増補）
+  // 6 画質基準・品質検査
   const qcLines = [
     "品質基準の判定は、目視確認に加え、必要に応じて拡大確認を行う。",
     "NG例（代表）：傾き、欠け、ピンぼけ、露出過不足、反射・写り込み、モアレ、偽色、ノイズ、天地逆、左右逆、歪み。",
@@ -96,7 +99,7 @@ export function buildSpecSections(data: Data): SpecSection[] {
   }
   push("6. 画質基準・品質検査", qcLines);
 
-  // 7 画像処理・色管理（詳細／厳格で増補）
+  // 7 画像処理・色管理
   const colorLines = [
     "画像処理は、資料の情報を損なわない範囲で、軽微な補正（傾き補正、余白調整等）に限定するのを原則とする。",
     "保存用（マスター）は、可能な限り可逆または非圧縮の形式を採用し、利用用（閲覧用）は用途に応じて圧縮・PDF化等を行う。",
@@ -109,7 +112,7 @@ export function buildSpecSections(data: Data): SpecSection[] {
   }
   push("7. 画像処理・色管理", colorLines);
 
-  // 8 メタデータ（基本→詳細→厳格）
+  // 8 メタデータ
   const mdLines: string[] = [];
   mdLines.push("メタデータは、成果物の探索性・再利用性を高めるために付与する。");
   if (!flags.requireMetadata) {
@@ -128,7 +131,7 @@ export function buildSpecSections(data: Data): SpecSection[] {
   }
   push("8. メタデータ要件", mdLines);
 
-  // 9 ログ・管理データ（詳細以上で増補）
+  // 9 ログ・管理データ
   const logLines = [
     "作業ログ（管理データ）は、後日の説明可能性を担保するために作成する。",
     "最低限、欠落・重複・差替え・対象外等、成果物の完全性に影響する事項を記録する。",
@@ -147,7 +150,7 @@ export function buildSpecSections(data: Data): SpecSection[] {
   }
   push("9. ログ・管理データ", logLines);
 
-  // 10 検査（検査書との整合）
+  // 10 検査
   const inspLines = [
     `検査レベルは「${inspectionLabel(data.inspectionLevel)}」である。`,
     "検査は、(i) 画質、(ii) 欠落・重複、(iii) 命名・フォルダ整合、(iv) メタデータ整合、(v) 媒体要件の順に確認する。",
@@ -159,7 +162,7 @@ export function buildSpecSections(data: Data): SpecSection[] {
   }
   push("10. 検査・是正", inspLines);
 
-  // 11 納品媒体・保管（詳細／厳格）
+  // 11 納品媒体・保管
   const mediaLines = [
     "納品は、成果物（マスター／閲覧用／メタデータ／ログ）を所定のフォルダ構成で格納し、媒体単位で管理する。",
   ];
@@ -173,7 +176,7 @@ export function buildSpecSections(data: Data): SpecSection[] {
   }
   push("11. 納品媒体・保管", mediaLines);
 
-  // 12 情報管理（厳格で増補）
+  // 12 情報管理
   const secLines = ["作業中・納品後の情報管理は、機密度および取り扱い区分に従い実施する。"];
   if (profile === "gunma") {
     secLines.push(
@@ -182,7 +185,7 @@ export function buildSpecSections(data: Data): SpecSection[] {
   }
   push("12. 情報管理・セキュリティ", secLines);
 
-  // 13 付帯・連絡
+  // 13 付帯
   push("13. 付帯事項", [
     "本書に定めのない事項、または解釈に疑義がある事項は、協議の上で取り決める。",
     hasAny(data.notes) ? `備考：${data.notes}` : "備考：—",

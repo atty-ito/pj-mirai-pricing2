@@ -1,17 +1,38 @@
+import { ReactNode } from "react";
 import { Data } from "../../types/pricing";
 import { CalcResult } from "../../utils/calculations";
-import { fmtJPY, toInt, sizeLabel, colorModeLabel, dpiLabel, formatLabel, handlingLabel, metadataLabel, specProfileLabel, inspectionLabel } from "../../utils/formatters";
+import { 
+  fmtJPY, 
+  toInt, 
+  sizeLabel, 
+  colorModeLabel, 
+  dpiLabel, 
+  formatLabel, 
+  handlingLabel, 
+  metadataLabel, 
+  specProfileLabel, 
+  inspectionLabel 
+} from "../../utils/formatters";
 
 type Props = {
   data: Data;
   calc: CalcResult;
 };
 
-// システム名をコンポーネント内で使用できるように定義
-const SYSTEM_NAME = "KHQ見積もり統合システム";
+// 指示書用のページコンポーネント（App.tsxから復元）
+function Page(props: { title: string; children: ReactNode }) {
+  return (
+    <div className="print-page rounded-2xl border bg-white shadow-sm print:rounded-none print:border-0 print:shadow-none">
+      <div className="border-b px-4 py-3">
+        <div className="text-sm font-semibold text-slate-800">{props.title}</div>
+      </div>
+      <div className="p-4">{props.children}</div>
+    </div>
+  );
+}
 
 export function InstructionView({ data, calc }: Props) {
-  // 仕様フラグの判定（元コードと同じロジック）
+  // 仕様フラグ判定
   const specFlags = {
     requireMedia: data.specProfile === "gunma" ? data.gunmaMediaRequirements : data.specProfile === "ndl",
     requireMetadata: data.specProfile === "gunma" ? data.gunmaMetadataMandatory : data.specProfile === "ndl",
@@ -19,117 +40,102 @@ export function InstructionView({ data, calc }: Props) {
   };
 
   return (
-    <div className="space-y-6">
-      {/* 印刷用ページ外枠 */}
-      <div className="print-page bg-white p-8 shadow-sm border min-h-[297mm]">
-        <div className="border-b-2 border-slate-900 pb-2 mb-6">
-          <h1 className="text-2xl font-bold text-slate-900">作業指示書（内部用）</h1>
-        </div>
-
-        <div className="grid grid-cols-2 gap-6 mb-8">
-          <div className="space-y-1 text-sm">
-            <div className="flex border-b py-1">
-              <span className="w-24 font-semibold text-slate-600">顧客名</span>
-              <span className="flex-1 text-slate-900">{data.clientName || "（未入力）"}</span>
+    <div className="space-y-4">
+      <Page title="作業指示書（内部用）">
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="rounded-lg border border-slate-200 bg-white p-3">
+              <div className="text-xs font-semibold text-slate-700">案件</div>
+              <div className="mt-1 text-sm text-slate-900">
+                <div>顧客名: {data.clientName || "（未入力）"}</div>
+                <div className="mt-0.5">案件名: {data.projectName || "（未入力）"}</div>
+                <div className="mt-0.5">納期目安: {data.dueDate || "（未入力）"}</div>
+              </div>
             </div>
-            <div className="flex border-b py-1">
-              <span className="w-24 font-semibold text-slate-600">案件名</span>
-              <span className="flex-1 text-slate-900">{data.projectName || "（未入力）"}</span>
-            </div>
-            <div className="flex border-b py-1">
-              <span className="w-24 font-semibold text-slate-600">納期目安</span>
-              <span className="flex-1 text-slate-900">{data.dueDate || "（未入力）"}</span>
-            </div>
-          </div>
-
-          <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
-            <h2 className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">作業要件スイッチ</h2>
-            <div className="grid grid-cols-2 gap-y-1 text-xs">
-              <div className="text-slate-600">適用標準:</div>
-              <div className="font-bold text-slate-900">{specProfileLabel(data.specProfile)}</div>
-              <div className="text-slate-600">媒体要件:</div>
-              <div className="font-bold text-slate-900">{specFlags.requireMedia ? "必須（指定あり）" : "任意"}</div>
-              <div className="text-slate-600">メタデータ:</div>
-              <div className="font-bold text-slate-900">{specFlags.requireMetadata ? "必須（厳格）" : "基本項目のみ"}</div>
-              <div className="text-slate-600">検査強度:</div>
-              <div className="font-bold text-slate-900">{specFlags.fullInspection ? "全数検査" : inspectionLabel(data.inspectionLevel)}</div>
+            <div className="rounded-lg border border-slate-200 bg-white p-3">
+              <div className="text-xs font-semibold text-slate-700">作業要件スイッチ</div>
+              <div className="mt-1 space-y-0.5 text-sm text-slate-900">
+                <div>標準: {specProfileLabel(data.specProfile)}</div>
+                <div>媒体要件: {specFlags.requireMedia ? "必須" : "任意"}</div>
+                <div>メタデータ: {specFlags.requireMetadata ? "必須" : "任意"}</div>
+                <div>検査: {specFlags.fullInspection ? "全数検査" : inspectionLabel(data.inspectionLevel)}</div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="mb-8">
-          <h2 className="text-sm font-bold text-white bg-slate-800 px-3 py-1.5 mb-3 rounded">作業明細・スキャン仕様</h2>
-          <div className="overflow-hidden border border-slate-200 rounded-lg">
-            <table className="w-full text-[11px] leading-tight text-left">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="p-2 w-[25%]">項目名 / 備考</th>
-                  <th className="p-2 w-[10%]">数量</th>
-                  <th className="p-2 w-[35%]">スキャン・出力仕様</th>
-                  <th className="p-2 w-[15%]">付帯・OCR</th>
-                  <th className="p-2 w-[15%] text-right">参考単価</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {data.workItems.map((w) => (
-                  <tr key={w.id} className="align-top">
-                    <td className="p-2">
-                      <div className="font-bold text-slate-900">{w.title}</div>
-                      <div className="mt-1 text-slate-500 italic whitespace-pre-wrap">{w.notes || "—"}</div>
-                    </td>
-                    <td className="p-2 font-medium">
-                      {toInt(w.qty).toLocaleString()} {w.unit}
-                    </td>
-                    <td className="p-2 space-y-1">
-                      <div><span className="text-slate-400">サイズ:</span> {sizeLabel(w.sizeClass)}</div>
-                      <div><span className="text-slate-400">カラー:</span> {colorModeLabel(w.colorMode)}</div>
-                      <div><span className="text-slate-400">解像度:</span> {dpiLabel(w.dpi)}</div>
-                      <div><span className="text-slate-400">形式:</span> {w.formats.map(formatLabel).join(", ")}</div>
-                    </td>
-                    <td className="p-2 space-y-1">
-                      <div><span className="text-slate-400">OCR:</span> {w.ocr ? "あり" : "なし"}</div>
-                      <div><span className="text-slate-400">メタ:</span> {metadataLabel(w.metadataLevel)}</div>
-                      <div><span className="text-slate-400">取扱:</span> {handlingLabel(w.handling)}</div>
-                    </td>
-                    <td className="p-2 text-right font-mono text-slate-400">
-                      {fmtJPY(calc.unitBreakdowns[w.id]?.finalUnitPrice || 0)}
-                    </td>
+          <div className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="text-xs font-semibold text-slate-700">作業一覧（内部指示）</div>
+            <div className="mt-2 overflow-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50">
+                  <tr className="text-left">
+                    <th className="p-2 border-b w-[26%]">作業</th>
+                    <th className="p-2 border-b w-[12%]">数量</th>
+                    <th className="p-2 border-b w-[26%]">スキャン仕様</th>
+                    <th className="p-2 border-b w-[18%]">付帯</th>
+                    <th className="p-2 border-b w-[18%]">備考</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.workItems.length === 0 ? (
+                    <tr>
+                      <td className="p-3 text-slate-500" colSpan={5}>
+                        作業項目が未入力です。
+                      </td>
+                    </tr>
+                  ) : (
+                    data.workItems.map((w) => (
+                      <tr key={w.id} className="align-top">
+                        <td className="p-2 border-b">
+                          <div className="font-medium text-slate-900">{w.title}</div>
+                          <div className="text-[11px] text-slate-600">
+                            サイズ:{sizeLabel(w.sizeClass)} / 色:{colorModeLabel(w.colorMode)} / 解像度:{dpiLabel(w.dpi)}
+                          </div>
+                        </td>
+                        <td className="p-2 border-b">
+                          {toInt(w.qty)} {w.unit}
+                        </td>
+                        <td className="p-2 border-b">
+                          <div>形式: {w.formats.map(formatLabel).join(", ")}</div>
+                          <div>取扱: {handlingLabel(w.handling)}</div>
+                        </td>
+                        <td className="p-2 border-b">
+                          <div>OCR: {w.ocr ? "あり" : "なし"}</div>
+                          <div>メタデータ: {metadataLabel(w.metadataLevel)}</div>
+                        </td>
+                        <td className="p-2 border-b whitespace-pre-wrap">{w.notes || "—"}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
 
-        <div className="grid grid-cols-2 gap-6">
-          <div>
-            <h2 className="text-sm font-bold text-slate-800 border-l-4 border-slate-800 pl-2 mb-3">実費品目・特殊工程</h2>
-            <div className="space-y-1 border rounded-lg p-3 min-h-[100px]">
+          <div className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="text-xs font-semibold text-slate-700">備品・実費（自由入力）</div>
+            <div className="mt-2">
               {data.miscExpenses.length === 0 ? (
-                <div className="text-xs text-slate-400 italic">登録なし</div>
+                <div className="text-sm text-slate-500">登録なし</div>
               ) : (
-                data.miscExpenses.map((m) => (
-                  <div key={m.id} className="flex justify-between text-xs py-1 border-b border-dashed border-slate-200 last:border-0">
-                    <span className="text-slate-700">{m.label}</span>
-                    <span className="font-medium text-slate-900">{m.qty} {m.unit}</span>
-                  </div>
-                ))
+                <div className="space-y-1">
+                  {data.miscExpenses.map((m) => (
+                    <div key={m.id} className="flex items-baseline justify-between gap-3 text-sm">
+                      <div className="text-slate-800">{m.label || "（名称未入力）"}</div>
+                      <div className="font-mono text-slate-900">{fmtJPY(m.amount)}</div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>
-          <div>
-            <h2 className="text-sm font-bold text-slate-800 border-l-4 border-slate-800 pl-2 mb-3">特記事項（全体）</h2>
-            <div className="border rounded-lg p-3 min-h-[100px] text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
-              {data.notes || "特になし"}
-            </div>
+
+          <div className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="text-xs font-semibold text-slate-700">備考</div>
+            <div className="mt-2 whitespace-pre-wrap text-sm text-slate-900">{data.notes || "（未入力）"}</div>
           </div>
         </div>
-
-        <div className="mt-12 pt-6 border-t border-slate-200 text-[10px] text-slate-400 flex justify-between">
-          <span>{SYSTEM_NAME} - 指示書出力モード</span>
-          <span>印刷日: {new Date().toLocaleDateString()}</span>
-        </div>
-      </div>
+      </Page>
     </div>
   );
 }
