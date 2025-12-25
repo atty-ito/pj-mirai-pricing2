@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, FormEvent } from "react";
 import { Data, ViewKey, WorkItem, MiscExpense } from "./types/pricing";
 import { computeCalc } from "./utils/calculations";
 import { suggestQuotationNo, suggestInspectionReportNo, uid } from "./utils/formatters";
@@ -13,7 +13,106 @@ import { CompareView } from "./features/compare/CompareView";
 import { SpecView } from "./features/spec/SpecView";
 import { InspectionView } from "./features/inspection/InspectionView";
 
+// ---- グラフィカルなログイン画面 ----
+function LoginView({ onLogin }: { onLogin: () => void }) {
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState("");
+  const [isFocus, setIsFocus] = useState(false);
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (pw === "1234") {
+      onLogin();
+    } else {
+      setErr("パスワードが違います");
+      setPw("");
+    }
+  };
+
+  return (
+    <div className="min-h-screen w-full flex items-center justify-center bg-slate-900 relative overflow-hidden">
+      {/* 背景装飾（アニメーション付きグラデーション） */}
+      <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-[#0f172a] to-[#1e1b4b]" />
+      <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] bg-indigo-600/20 rounded-full blur-[100px] animate-pulse" />
+      <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] bg-blue-600/20 rounded-full blur-[100px] animate-pulse" style={{ animationDelay: "2s" }} />
+
+      {/* ログインカード */}
+      <div className="relative z-10 w-full max-w-sm mx-4">
+        <div className="bg-white/10 backdrop-blur-md border border-white/10 rounded-3xl shadow-2xl p-8 overflow-hidden">
+          {/* 光の反射エフェクト */}
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-lg mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-8 h-8 text-white">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-black text-white tracking-tight drop-shadow-md">{SYSTEM_NAME}</h1>
+            <p className="text-xs text-slate-300 mt-2 font-medium">Authorized Personnel Only</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="relative">
+              <div className={`absolute inset-0 bg-gradient-to-r from-indigo-500 to-blue-500 rounded-xl blur transition-opacity duration-300 ${isFocus ? 'opacity-100' : 'opacity-0'}`} />
+              <div className="relative bg-slate-900/80 rounded-xl p-1 border border-white/10">
+                <input
+                  type="password"
+                  className="w-full bg-transparent text-white placeholder-slate-500 px-4 py-3 outline-none text-center tracking-widest font-mono text-lg"
+                  placeholder="PASSCODE"
+                  value={pw}
+                  onChange={(e) => { setPw(e.target.value); setErr(""); }}
+                  onFocus={() => setIsFocus(true)}
+                  onBlur={() => setIsFocus(false)}
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {err && (
+              <div className="text-center text-rose-300 text-xs font-bold animate-shake">
+                ⚠️ {err}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 text-slate-900 font-bold rounded-xl shadow-lg shadow-black/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 group"
+            >
+              <span>ACCESS SYSTEM</span>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 transition-transform group-hover:translate-x-1">
+                <path fillRule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </form>
+
+          <div className="mt-8 text-center">
+            <p className="text-[10px] text-slate-400">
+              Secured by KHQ Architecture v24.10
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- メインアプリケーション ----
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // セッションストレージでログイン状態を維持（ブラウザを閉じるまで）
+  useEffect(() => {
+    if (sessionStorage.getItem("khq_auth") === "true") {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleLogin = () => {
+    sessionStorage.setItem("khq_auth", "true");
+    setIsAuthenticated(true);
+  };
+
   const [data, setData] = useState<Data>(() => ({
     quotationNo: "",
     issuerOrg: ISSUER.org,
@@ -78,7 +177,7 @@ export default function App() {
     includeInternalPlanDiffPage: true,
     includeInternalPlanComparePage: true,
 
-    // 初期データを完全復元（4つの業務項目）
+    // 初期データ（業務項目）
     workItems: [
       {
         id: uid("w"),
@@ -138,7 +237,7 @@ export default function App() {
       },
     ],
 
-    // 初期データを完全復元（3つの実費項目）
+    // 初期データ（実費）
     miscExpenses: [
       { id: uid("m"), label: "外付けHDD（実費）", qty: 1, unit: "式", unitPrice: 0, amount: 0, notes: "" },
       { id: uid("m"), label: "保存箱（実費）", qty: 1, unit: "式", unitPrice: 0, amount: 0, notes: "" },
@@ -219,6 +318,11 @@ export default function App() {
   const updateMiscExpense = (id: string, patch: Partial<MiscExpense>) => {
     setData((p) => ({ ...p, miscExpenses: p.miscExpenses.map((m) => (m.id === id ? { ...m, ...patch } : m)) }));
   };
+
+  // 認証チェック
+  if (!isAuthenticated) {
+    return <LoginView onLogin={handleLogin} />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
