@@ -1,177 +1,264 @@
 import { useMemo } from "react";
 import { Data, Tier, InspectionLevel } from "../../types/pricing";
-import { computeCalc, CalcResult } from "../../utils/calculations";
-import { fmtJPY } from "../../utils/formatters";
+import { computeCalc, CalcResult, UnitPriceBreakdown, computeUnitPrice } from "../../utils/calculations";
+import { fmtJPY, inspectionLabel, tierLabel } from "../../utils/formatters";
+import { PROJECT_FIXED_FEES } from "../../constants/coefficients";
 
 type Props = {
   data: Data;
 };
 
+// コスト構造の内訳型
+type CostStructure = {
+  fixed: number; // 案件固定費
+  variableBase: number; // 変動費（基礎単価分）
+  variableSpecs: number; // 変動費（仕様加算分：サイズ・色など）
+  inspectionOverhead: number; // 検査による増分（係数コスト）
+  misc: number; // 実費・付帯
+  total: number;
+};
+
+// 内訳を計算する関数
+function analyzeCostStructure(calc: CalcResult, tier: Tier, data: Data): CostStructure {
+  let fixed = 0;
+  let variableBase = 0;
+  let variableSpecs = 0;
+  let inspectionOverhead = 0;
+  let misc = 0;
+
+  // 固定費
+  fixed = PROJECT_FIXED_FEES[tier].setup + PROJECT_FIXED_FEES[tier].management;
+
+  // 実費・付帯
+  misc = calc.lineItems
+    .filter(x => x.kind === "misc" || x.kind === "addon")
+    .reduce((a, b) => a + b.amount, 0);
+
+  // 変動費の分解
+  for (const w of data.workItems) {
+    const bd = calc.unitBreakdowns[w.id];
+    if (!bd) continue;
+    
+    const qty = w.qty;
+    // 基礎単価分
+    const baseCost = bd.base * qty;
+    // 仕様加算分（小計 - 基礎）
+    const specCost = (bd.subtotal - bd.base) * qty;
+    // 検査コスト（最終単価 - 小計） ※端数処理の影響含む
+    const inspCost = (bd.finalUnitPrice - bd.subtotal) * qty;
+
+    variableBase += baseCost;
+    variableSpecs += specCost;
+    inspectionOverhead += inspCost;
+  }
+
+  return {
+    fixed,
+    variableBase,
+    variableSpecs,
+    inspectionOverhead,
+    misc,
+    total: calc.subtotal // 税抜で比較
+  };
+}
+
 /**
- * 比較用カードコンポーネント
+ * 積み上げバーグラフコンポーネント（CSS Grid使用）
  */
-function PlanComparisonCard({ 
-  tier, 
-  label, 
-  inspection, 
-  calc, 
-  stdTotal, 
-  maxTotal 
-}: { 
-  tier: Tier; 
-  label: string; 
-  inspection: InspectionLevel; 
-  calc: CalcResult; 
-  stdTotal: number; 
-  maxTotal: number; 
-}) {
-  const COLOR: Record<Tier, string> = {
-    economy: "#22c55e", // green
-    standard: "#3b82f6", // blue
-    premium: "#ec4899", // pink
-  };
-
-  const accent = COLOR[tier];
-  const ratio = Math.max(Math.min((calc.total / maxTotal) * 100, 100), 0);
-  const delta = tier === "standard" ? 0 : calc.total - stdTotal;
-  const deltaSign = delta === 0 ? "" : delta > 0 ? "+" : "-";
-  const deltaAbs = Math.abs(delta);
-
-  const inspectionLabel = (lv: InspectionLevel) => {
-    if (lv === "sample") return "抜取検査";
-    if (lv === "full") return "全数検査";
-    if (lv === "double_full") return "二重全数";
-    return "検査なし";
-  };
-
+function StackedBar({ structure, maxTotal }: { structure: CostStructure; maxTotal: number }) {
+  const getWidth = (val: number) => `${(val / maxTotal) * 100}%`;
+  
   return (
-    <div
-      className="rounded-2xl border-2 p-4 shadow-sm"
-      style={{
-        borderColor: accent,
-        background: `linear-gradient(135deg, ${accent}20, #ffffff 55%)`,
-      }}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-lg font-extrabold" style={{ color: accent }}>
-          {label}
+    <div className="h-8 w-full flex rounded-lg overflow-hidden bg-slate-100 ring-1 ring-slate-200 mt-2">
+      {structure.variableBase > 0 && (
+        <div style={{ width: getWidth(structure.variableBase) }} className="bg-blue-500 hover:bg-blue-600 transition-colors relative group">
+          <div className="absolute inset-0 flex items-center justify-center text-[9px] text-white font-bold opacity-0 group-hover:opacity-100">基礎</div>
         </div>
-        <div
-          className="rounded-full px-3 py-1 text-xs font-extrabold text-white"
-          style={{ backgroundColor: accent }}
-        >
-          {inspectionLabel(inspection)}
+      )}
+      {structure.variableSpecs > 0 && (
+        <div style={{ width: getWidth(structure.variableSpecs) }} className="bg-cyan-400 hover:bg-cyan-500 transition-colors relative group">
+          <div className="absolute inset-0 flex items-center justify-center text-[9px] text-white font-bold opacity-0 group-hover:opacity-100">仕様</div>
         </div>
-      </div>
-
-      <div className="mt-3 text-3xl font-black tabular-nums text-slate-900">{fmtJPY(calc.total)}</div>
-      <div className="mt-1 text-xs text-slate-700">
-        小計 {fmtJPY(calc.subtotal)} ／ 税 {fmtJPY(calc.tax)}
-      </div>
-
-      <div className="mt-3">
-        <div className="h-3 w-full rounded-full bg-white/60 ring-1 ring-slate-200 overflow-hidden">
-          <div className="h-full" style={{ width: `${ratio}%`, backgroundColor: accent }} />
+      )}
+      {structure.inspectionOverhead > 0 && (
+        <div style={{ width: getWidth(structure.inspectionOverhead) }} className="bg-rose-400 hover:bg-rose-500 transition-colors relative group">
+          <div className="absolute inset-0 flex items-center justify-center text-[9px] text-white font-bold opacity-0 group-hover:opacity-100">検査</div>
         </div>
-        <div className="mt-1 text-[11px] text-slate-700">相対比較（最大=100%）</div>
-      </div>
-
-      <div className="mt-3 rounded-xl bg-white/70 p-3 text-sm text-slate-800 ring-1 ring-slate-200">
-        <div className="flex items-center justify-between">
-          <span className="font-semibold">Std差分（税込）</span>
-          {tier === "standard" ? (
-            <span className="tabular-nums">—</span>
-          ) : (
-            <span className="tabular-nums font-extrabold">{`${deltaSign}${fmtJPY(deltaAbs)}`}</span>
-          )}
+      )}
+      {structure.fixed > 0 && (
+        <div style={{ width: getWidth(structure.fixed) }} className="bg-slate-500 hover:bg-slate-600 transition-colors relative group">
+          <div className="absolute inset-0 flex items-center justify-center text-[9px] text-white font-bold opacity-0 group-hover:opacity-100">固定</div>
         </div>
-        <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-700">
-          <div className="rounded-lg bg-slate-50 px-2 py-1 text-center">
-            固定費: <span className="font-bold">{fmtJPY(calc.lineItems.filter(x => x.kind === "fixed" || x.kind === "addon").reduce((a, b) => a + b.amount, 0))}</span>
-          </div>
-          <div className="rounded-lg bg-slate-50 px-2 py-1 text-center">
-            変動費: <span className="font-bold">{fmtJPY(calc.lineItems.filter(x => x.kind === "work").reduce((a, b) => a + b.amount, 0))}</span>
-          </div>
+      )}
+      {structure.misc > 0 && (
+        <div style={{ width: getWidth(structure.misc) }} className="bg-amber-400 hover:bg-amber-500 transition-colors relative group">
+          <div className="absolute inset-0 flex items-center justify-center text-[9px] text-white font-bold opacity-0 group-hover:opacity-100">実費</div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
 export function CompareView({ data }: Props) {
-  // 各プランの前提検査レベル
   const PRESET_INSPECTION: Record<Tier, InspectionLevel> = {
     economy: "sample",
     standard: "full",
     premium: "double_full",
   };
 
-  // 3プランの計算を同時実行
   const plans = useMemo(() => {
-    return [
-      { 
-        tier: "economy" as Tier, 
-        label: "エコノミー", 
-        inspection: PRESET_INSPECTION.economy, 
-        calc: computeCalc({ ...data, tier: "economy", inspectionLevel: PRESET_INSPECTION.economy }) 
-      },
-      { 
-        tier: "standard" as Tier, 
-        label: "スタンダード", 
-        inspection: PRESET_INSPECTION.standard, 
-        calc: computeCalc({ ...data, tier: "standard", inspectionLevel: PRESET_INSPECTION.standard }) 
-      },
-      { 
-        tier: "premium" as Tier, 
-        label: "プレミアム", 
-        inspection: PRESET_INSPECTION.premium, 
-        calc: computeCalc({ ...data, tier: "premium", inspectionLevel: PRESET_INSPECTION.premium }) 
-      },
-    ];
+    return (["economy", "standard", "premium"] as Tier[]).map(tier => {
+      const calc = computeCalc({ ...data, tier, inspectionLevel: PRESET_INSPECTION[tier] });
+      const structure = analyzeCostStructure(calc, tier, data);
+      return {
+        tier,
+        label: tierLabel(tier),
+        inspection: PRESET_INSPECTION[tier],
+        calc,
+        structure
+      };
+    });
   }, [data]);
 
-  const stdTotal = plans.find((p) => p.tier === "standard")?.calc.total ?? 0;
-  const maxTotal = Math.max(...plans.map((p) => p.calc.total), 1);
+  const economyTotal = plans[0].calc.total; // 税込
+  const maxStructureTotal = Math.max(...plans.map(p => p.structure.total)); // グラフ正規化用（税抜）
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full bg-yellow-200 px-3 py-1 text-xs font-black text-slate-900 mb-2">
-            内部資料（社外提出禁止）
+    <div className="space-y-6">
+      {/* ヘッダー＆凡例 */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-yellow-100 px-3 py-1 text-xs font-bold text-yellow-800 border border-yellow-200 mb-2">
+              社外秘・内部検討用
+            </div>
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">プラン別コスト構造分析</h2>
+            <p className="text-sm text-slate-500 mt-1">プラン変更によるコスト増減要因（ドライバー）の可視化</p>
           </div>
-          <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">見積比較（3プラン）</h2>
-          <div className="mt-1 text-sm text-slate-600 font-medium">
-            {data.clientName} / {data.projectName}
+          
+          <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 text-xs">
+            <div className="font-bold text-slate-700 mb-2">グラフ凡例（コスト構成要素）</div>
+            <div className="flex gap-4">
+              <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-blue-500 rounded-sm"></div>変動費(基礎)</div>
+              <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-cyan-400 rounded-sm"></div>変動費(仕様加算)</div>
+              <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-rose-400 rounded-sm"></div>検査コスト増分</div>
+              <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-slate-500 rounded-sm"></div>固定費(管理・ST)</div>
+              <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-amber-400 rounded-sm"></div>実費・付帯</div>
+            </div>
           </div>
         </div>
-        
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600 max-w-xs leading-relaxed">
-          <div className="font-semibold text-slate-800 mb-1">比較の前提</div>
-          作業対象（数量・仕様・オプション）は入力中の条件で固定し、プランごとの基礎単価および標準設定の検査レベルのみを変動させています。
+
+        {/* 3プラン比較カード */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {plans.map((p) => {
+            const diff = p.calc.total - economyTotal;
+            const diffPercent = economyTotal > 0 ? (diff / economyTotal) * 100 : 0;
+            const isBase = p.tier === "economy";
+            const borderColor = p.tier === "premium" ? "border-rose-200" : p.tier === "standard" ? "border-blue-200" : "border-green-200";
+            const bgColor = p.tier === "premium" ? "bg-rose-50/30" : p.tier === "standard" ? "bg-blue-50/30" : "bg-green-50/30";
+
+            return (
+              <div key={p.tier} className={`rounded-xl border-2 ${borderColor} ${bgColor} p-5 relative overflow-hidden transition-all hover:shadow-md`}>
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <div className="text-lg font-black text-slate-900">{p.label}</div>
+                    <div className="text-xs font-medium text-slate-500 mt-0.5">{inspectionLabel(p.inspection)}</div>
+                  </div>
+                  {isBase ? (
+                    <div className="px-2 py-1 bg-slate-800 text-white text-[10px] font-bold rounded">比較基準</div>
+                  ) : (
+                    <div className="text-right">
+                      <div className="text-xs font-bold text-slate-500">Eco比</div>
+                      <div className="text-sm font-black text-rose-600">+{diffPercent.toFixed(1)}%</div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mb-4">
+                  <div className="text-sm text-slate-500 mb-1">見積合計 (税込)</div>
+                  <div className="text-3xl font-black tabular-nums tracking-tight text-slate-900">{fmtJPY(p.calc.total)}</div>
+                  {!isBase && (
+                    <div className="text-xs font-bold text-rose-600 mt-1 tabular-nums">
+                      (+{fmtJPY(diff)})
+                    </div>
+                  )}
+                </div>
+
+                {/* グラフ */}
+                <div className="mb-4">
+                  <div className="flex justify-between text-[10px] text-slate-500 mb-1">
+                    <span>構成比率</span>
+                    <span>{fmtJPY(p.structure.total)} (税抜)</span>
+                  </div>
+                  <StackedBar structure={p.structure} maxTotal={maxStructureTotal} />
+                </div>
+
+                {/* 詳細内訳テーブル */}
+                <div className="bg-white/60 rounded-lg p-3 text-xs space-y-1.5 border border-slate-100">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600 flex items-center gap-1.5"><div className="w-2 h-2 bg-slate-500 rounded-full"></div>固定費</span>
+                    <span className="font-medium tabular-nums">{fmtJPY(p.structure.fixed)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600 flex items-center gap-1.5"><div className="w-2 h-2 bg-blue-500 rounded-full"></div>変動費(基礎)</span>
+                    <span className="font-medium tabular-nums">{fmtJPY(p.structure.variableBase)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600 flex items-center gap-1.5"><div className="w-2 h-2 bg-cyan-400 rounded-full"></div>変動費(仕様)</span>
+                    <span className="font-medium tabular-nums">{fmtJPY(p.structure.variableSpecs)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600 flex items-center gap-1.5"><div className="w-2 h-2 bg-rose-400 rounded-full"></div>検査増分</span>
+                    <span className="font-bold text-rose-600 tabular-nums">{fmtJPY(p.structure.inspectionOverhead)}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {plans.map((p) => (
-          <PlanComparisonCard
-            key={p.tier}
-            tier={p.tier}
-            label={p.label}
-            inspection={p.inspection}
-            calc={p.calc}
-            stdTotal={stdTotal}
-            maxTotal={maxTotal}
-          />
-        ))}
-      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
+            <span className="p-1 bg-slate-100 rounded text-slate-600">💡</span>
+            プラン選択の意思決定ポイント
+          </h3>
+          <ul className="space-y-3 text-sm text-slate-700 leading-relaxed">
+            <li className="flex gap-3">
+              <span className="font-bold text-green-600 whitespace-nowrap">エコノミー</span>
+              <span>予算重視。検査は抜取のため、工程内での手戻りや納品後の微修正リスクを許容できる場合に推奨。</span>
+            </li>
+            <li className="flex gap-3">
+              <span className="font-bold text-blue-600 whitespace-nowrap">スタンダード</span>
+              <span>標準的選択。全数検査により、文字可読性やページ順序の担保を行う。公文書として十分な品質。</span>
+            </li>
+            <li className="flex gap-3">
+              <span className="font-bold text-rose-600 whitespace-nowrap">プレミアム</span>
+              <span>厳格要件。二重検査（ダブルチェック）と詳細ログ記録により、監査耐性と完全性を保証する。重要文化財や機密文書向け。</span>
+            </li>
+          </ul>
+        </div>
 
-      <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
-        <div className="font-extrabold text-slate-900 mb-2">プラン選択のポイント</div>
-        <div className="space-y-2 leading-relaxed text-xs">
-          <div>① <span className="font-bold">エコノミー</span>: 予算制約が厳しい場合に提案。検査は抜取のため、一定の不備許容を前提とする。</div>
-          <div>② <span className="font-bold">スタンダード</span>: 推奨設定。全数検査と工程内是正を含み、一般的な公文書作成レベルを担保。</div>
-          <div>③ <span className="font-bold">プレミアム</span>: 厳格な仕様や重要資料に。二重検査と詳細な作業ログにより、高い監査耐性を持つ。</div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
+            <span className="p-1 bg-slate-100 rounded text-slate-600">📊</span>
+            コストドライバー（価格変動要因）
+          </h3>
+          <div className="space-y-3 text-sm">
+            <div>
+              <div className="font-bold text-slate-800 mb-1">検査コストの影響</div>
+              <p className="text-slate-600 text-xs">
+                プレミアムプランでは、基礎単価に対して約20%の検査割増が発生します。これは二重検証の人件費に相当します。
+              </p>
+            </div>
+            <div>
+              <div className="font-bold text-slate-800 mb-1">固定費の厚み</div>
+              <p className="text-slate-600 text-xs">
+                プランが上がるにつれ、セットアップ費・管理費（F0/F1）が増加します。これは体制構築とセキュリティ管理の厳格化に伴うものです。
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
