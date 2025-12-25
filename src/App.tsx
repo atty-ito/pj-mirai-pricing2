@@ -1344,20 +1344,203 @@ const VIEW_ITEMS: Array<{ key: ViewKey; label: string; hint: string }> = [
   { key: "inspection", label: "検査", hint: "検査表（全数/抜取など）" },
 ];
 
-function NavButton(props: { active: boolean; label: string; hint: string; onClick: () => void }) {
-  const { active, label, hint, onClick } = props;
+function NavButton(props: {
+  viewKey: ViewKey;
+  active: boolean;
+  label: string;
+  hint: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  const { viewKey, active, label, hint, onClick, disabled } = props;
+
+  const accent = (() => {
+    switch (viewKey) {
+      case "input":
+        return { dot: "bg-blue-500", active: "border-blue-700 bg-blue-600 text-white", hintActive: "text-blue-100", inactive: "border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50" };
+      case "instruction":
+        return { dot: "bg-purple-500", active: "border-purple-700 bg-purple-600 text-white", hintActive: "text-purple-100", inactive: "border-slate-200 bg-white hover:border-purple-300 hover:bg-purple-50" };
+      case "estimate":
+        return { dot: "bg-emerald-500", active: "border-emerald-700 bg-emerald-600 text-white", hintActive: "text-emerald-100", inactive: "border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50" };
+      case "compare":
+        return { dot: "bg-orange-500", active: "border-orange-700 bg-orange-600 text-white", hintActive: "text-orange-100", inactive: "border-slate-200 bg-white hover:border-orange-300 hover:bg-orange-50" };
+      case "spec":
+        return { dot: "bg-teal-500", active: "border-teal-700 bg-teal-600 text-white", hintActive: "text-teal-100", inactive: "border-slate-200 bg-white hover:border-teal-300 hover:bg-teal-50" };
+      case "inspection":
+        return { dot: "bg-pink-500", active: "border-pink-700 bg-pink-600 text-white", hintActive: "text-pink-100", inactive: "border-slate-200 bg-white hover:border-pink-300 hover:bg-pink-50" };
+      default:
+        return { dot: "bg-slate-400", active: "border-slate-900 bg-slate-900 text-white", hintActive: "text-slate-200", inactive: "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50" };
+    }
+  })();
+
+  const isDisabled = Boolean(disabled);
+
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={isDisabled ? undefined : onClick}
+      disabled={isDisabled}
       className={[
         "w-full rounded-xl border px-3 py-2 text-left transition",
-        active ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
+        isDisabled
+          ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+          : active
+          ? accent.active
+          : accent.inactive,
       ].join(" ")}
     >
-      <div className="text-sm font-semibold">{label}</div>
-      <div className={["mt-0.5 text-xs", active ? "text-slate-200" : "text-slate-500"].join(" ")}>{hint}</div>
+      <div className="flex items-center gap-2">
+        <span className={["h-2.5 w-2.5 rounded-full", accent.dot].join(" ")} />
+        <div className="text-sm font-semibold">{label}</div>
+      </div>
+      <div
+        className={[
+          "mt-0.5 text-xs",
+          isDisabled ? "text-slate-400" : active ? accent.hintActive : "text-slate-600",
+        ].join(" ")}
+      >
+        {hint}
+      </div>
     </button>
+  );
+}
+
+
+function EstimateComparison(props: { data: Data }) {
+  const { data } = props;
+
+  const PRESET_INSPECTION: Record<Tier, InspectionLevel> = {
+    economy: "sample",
+    standard: "full",
+    premium: "double_full",
+  };
+
+  const COLOR: Record<Tier, string> = {
+    economy: "#22c55e", // green
+    standard: "#3b82f6", // blue
+    premium: "#ec4899", // pink
+  };
+
+  const plans = useMemo(() => {
+    const eco = computeCalc({ ...data, tier: "economy", inspectionLevel: PRESET_INSPECTION.economy });
+    const std = computeCalc({ ...data, tier: "standard", inspectionLevel: PRESET_INSPECTION.standard });
+    const pre = computeCalc({ ...data, tier: "premium", inspectionLevel: PRESET_INSPECTION.premium });
+    return [
+      { tier: "economy" as const, label: "エコノミー", inspection: PRESET_INSPECTION.economy, calc: eco },
+      { tier: "standard" as const, label: "スタンダード", inspection: PRESET_INSPECTION.standard, calc: std },
+      { tier: "premium" as const, label: "プレミアム", inspection: PRESET_INSPECTION.premium, calc: pre },
+    ];
+  }, [data]);
+
+  const stdTotal = plans.find((p) => p.tier === "standard")?.calc.total ?? 0;
+  const maxTotal = Math.max(...plans.map((p) => p.calc.total), 1);
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full bg-yellow-200 px-3 py-1 text-xs font-black text-slate-900">
+            内部資料（社外提出禁止）
+          </div>
+          <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-900">見積比較（3プラン）</h2>
+          <div className="mt-1 text-sm text-slate-600">
+            {data.clientName || data.projectName ? (
+              <span className="font-medium text-slate-700">{[data.clientName, data.projectName].filter(Boolean).join(" / ")}</span>
+            ) : (
+              <span>（顧客名・案件名が未入力です）</span>
+            )}
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+          <div className="font-semibold text-slate-800">比較の前提</div>
+          <div className="mt-1 space-y-1">
+            <div>
+              入力中のプラン: <span className="font-bold">{tierLabel(data.tier)}</span>
+            </div>
+            <div>
+              入力中の検査: <span className="font-bold">{inspectionLabel(data.inspectionLevel)}</span>
+            </div>
+            <div className="text-[11px] text-slate-600">
+              ※プラン比較では、作業対象（サイズ・色・dpi 等）の入力値は同一として扱い、プラン差・検査レベル差のみを反映します。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {plans.map((p) => {
+          const accent = COLOR[p.tier];
+          const ratio = Math.max(Math.min((p.calc.total / maxTotal) * 100, 100), 0);
+          const delta = p.tier === "standard" ? 0 : p.calc.total - stdTotal;
+          const deltaSign = delta === 0 ? "" : delta > 0 ? "+" : "-";
+          const deltaAbs = Math.abs(delta);
+
+          return (
+            <div
+              key={p.tier}
+              className="rounded-2xl border-2 p-4 shadow-sm"
+              style={{
+                borderColor: accent,
+                background: `linear-gradient(135deg, ${accent}20, #ffffff 55%)`,
+              }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-lg font-extrabold" style={{ color: accent }}>
+                  {p.label}
+                </div>
+                <div
+                  className="rounded-full px-3 py-1 text-xs font-extrabold text-white"
+                  style={{ backgroundColor: accent }}
+                  title="標準設定の検査レベル"
+                >
+                  {inspectionLabel(p.inspection)}
+                </div>
+              </div>
+
+              <div className="mt-3 text-3xl font-black tabular-nums text-slate-900">{fmtJPY(p.calc.total)}</div>
+              <div className="mt-1 text-xs text-slate-700">
+                小計 {fmtJPY(p.calc.subtotal)} ／ 税 {fmtJPY(p.calc.tax)}
+              </div>
+
+              <div className="mt-3">
+                <div className="h-3 w-full rounded-full bg-white/60 ring-1 ring-slate-200 overflow-hidden">
+                  <div className="h-full" style={{ width: `${ratio}%`, backgroundColor: accent }} />
+                </div>
+                <div className="mt-1 text-[11px] text-slate-700">相対比較（最大=100%）</div>
+              </div>
+
+              <div className="mt-3 rounded-xl bg-white/70 p-3 text-sm text-slate-800 ring-1 ring-slate-200">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">Std差分（税込）</span>
+                  {p.tier === "standard" ? (
+                    <span className="tabular-nums">—</span>
+                  ) : (
+                    <span className="tabular-nums font-extrabold">{`${deltaSign}${fmtJPY(deltaAbs)}`}</span>
+                  )}
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-700">
+                  <div className="rounded-lg bg-slate-50 px-2 py-1">
+                    固定費: <span className="font-bold">{fmtJPY(p.calc.lineItems.filter((x) => x.kind === "fixed").reduce((a, b) => a + b.amount, 0))}</span>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 px-2 py-1">
+                    変動費: <span className="font-bold">{fmtJPY(p.calc.lineItems.filter((x) => x.kind === "work").reduce((a, b) => a + b.amount, 0))}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
+        <div className="font-extrabold text-slate-900">読み方（経営判断のための要点）</div>
+        <div className="mt-2 space-y-2 leading-relaxed">
+          <div>① まずは <span className="font-bold">合計（税込）</span> の差分でレンジ感を掴みます（Std差分表示）。</div>
+          <div>② 次に <span className="font-bold">固定費</span> と <span className="font-bold">変動費</span> の内訳で、差の主要因が「セットアップ・管理」か「作業単価」かを切り分けます。</div>
+          <div>③ “プレミアム” の上振れは、基本的に <span className="font-bold">検査レベル</span> と <span className="font-bold">Tierの基礎単価・固定費</span> によって説明されます（作業対象の入力値は同一）。</div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1626,6 +1809,7 @@ export default function App() {
               {VIEW_ITEMS.map((it) => (
                 <NavButton
                   key={it.key}
+                  viewKey={it.key}
                   active={view === it.key}
                   label={it.label}
                   hint={it.hint}
@@ -1633,8 +1817,8 @@ export default function App() {
                 />
               ))}
 
-              <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-700">
-                <div className="font-semibold">現在の前提</div>
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-100 p-3 text-xs text-slate-700">
+                <div className="flex items-center justify-between"><div className="font-semibold">現在の前提</div><div className="text-[10px] text-slate-500">参照（操作不可）</div></div>
                 <div className="mt-1 space-y-1 text-slate-600">
                   <div>
                     標準: <span className="font-medium text-slate-800">{specProfileLabel(data.specProfile)}</span>
@@ -2950,270 +3134,15 @@ export default function App() {
                     本タブは内部検討用であり、顧客提出物（見積書・仕様書・検査結果報告書）に混入させないこと。
                   </div>
                   {data.includeInternalCalc && data.includeInternalPlanComparePage ? (
-                      (() => {
-                        const PRESET_INSPECTION: Record<Tier, InspectionLevel> = {
-                          economy: "sample",
-                          standard: "full",
-                          premium: "double_full",
-                        };
-
-                        const calcEco = computeCalc({ ...data, tier: "economy", inspectionLevel: PRESET_INSPECTION.economy });
-                        const calcStd = computeCalc({ ...data, tier: "standard", inspectionLevel: PRESET_INSPECTION.standard });
-                        const calcPre = computeCalc({ ...data, tier: "premium", inspectionLevel: PRESET_INSPECTION.premium });
-
-                        const plans: Array<{
-                          tier: Tier;
-                          label: string;
-                          inspection: InspectionLevel;
-                          calc: CalcResult;
-                        }> = [
-                          { tier: "economy", label: "エコノミー", inspection: PRESET_INSPECTION.economy, calc: calcEco },
-                          { tier: "standard", label: "スタンダード", inspection: PRESET_INSPECTION.standard, calc: calcStd },
-                          { tier: "premium", label: "プレミアム", inspection: PRESET_INSPECTION.premium, calc: calcPre },
-                        ];
-
-                        const maxTotal = Math.max(...plans.map((p) => p.calc.total), 1);
-
-                        const Bar = (props: { value: number }) => {
-                          const w = Math.max(0, Math.min(98, Math.round((props.value / maxTotal) * 98)));
-                          return (
-                            <svg viewBox="0 0 100 10" className="w-full h-[12px]">
-                              <rect x="0.5" y="0.5" width="99" height="9" fill="none" stroke="#94a3b8" strokeWidth="1" />
-                              <rect x="1" y="1" width={w} height="8" fill="#111827" />
-                            </svg>
-                          );
-                        };
-
-                        const TriBar = (props: { values: [number, number, number] }) => {
-                          const mx = Math.max(...props.values, 1);
-                          const ws = props.values.map((v) => Math.max(0, Math.min(98, Math.round((v / mx) * 98))));
-                          return (
-                            <svg viewBox="0 0 100 18" className="w-full h-[22px]">
-                              <rect x="0.5" y="0.5" width="99" height="17" fill="none" stroke="#94a3b8" strokeWidth="1" />
-                              <rect x="1" y="2" width={ws[0]} height="4" fill="#111827" />
-                              <rect x="1" y="7" width={ws[1]} height="4" fill="#6b7280" />
-                              <rect x="1" y="12" width={ws[2]} height="4" fill="#ffffff" stroke="#111827" strokeWidth="0.5" />
-                            </svg>
-                          );
-                        };
-
-                        const fixedSum = (tier: Tier) => PROJECT_FIXED_FEES[tier].setup + PROJECT_FIXED_FEES[tier].management;
-
-                        return (
-                          <DocPage
-                            header={<DocHeader docTitle="（内部用）見積比較表（3プラン）" data={data} showDueDate={false} />}
-                            footer={<DocFooter pageNo={1} totalPages={1} note="本頁は内部検討用であり、顧客提出物には含めない。" />}
-                          >
-                            <div className="text-[11px] text-slate-800 leading-relaxed">
-                              <div className="font-semibold text-slate-900 mb-1">1) 合計比較（税込）</div>
-                              <div className="text-slate-600 mb-3">
-                                同一の作業対象（数量・仕様）を前提に、プラン（Tier）と検査レベルの標準設定を変えた場合の、合計金額の比較である。
-                              </div>
-
-                              <div className="border border-slate-300">
-                                <table className="w-full text-[11px]">
-                                  <thead className="bg-slate-50">
-                                    <tr className="border-b border-slate-300">
-                                      <th className="py-2 px-2 text-left">プラン</th>
-                                      <th className="py-2 px-2 text-left">検査</th>
-                                      <th className="py-2 px-2 text-right">固定費（F0相当）</th>
-                                      <th className="py-2 px-2 text-right">合計（税込）</th>
-                                      <th className="py-2 px-2 text-left">相対比較</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {plans.map((p) => (
-                                      <tr key={p.tier} className="border-b border-slate-200">
-                                        <td className="py-2 px-2 font-semibold">{p.label}</td>
-                                        <td className="py-2 px-2">{inspectionLabel(p.inspection)}</td>
-                                        <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(fixedSum(p.tier))}</td>
-                                        <td className="py-2 px-2 text-right tabular-nums font-semibold">{fmtJPY(p.calc.total)}</td>
-                                        <td className="py-2 px-2">
-                                          <Bar value={p.calc.total} />
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-
-                              <div className="mt-5 font-semibold text-slate-900 mb-1">2) 価格ドライバー（プラン差分の主要因）</div>
-                              <div className="border border-slate-300">
-                                <table className="w-full text-[11px]">
-                                  <thead className="bg-slate-50">
-                                    <tr className="border-b border-slate-300">
-                                      <th className="py-2 px-2 text-left">項目</th>
-                                      <th className="py-2 px-2 text-right">エコノミー</th>
-                                      <th className="py-2 px-2 text-right">スタンダード</th>
-                                      <th className="py-2 px-2 text-right">プレミアム</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    <tr className="border-b border-slate-200">
-                                      <td className="py-2 px-2">L0 基礎単価（/単位）</td>
-                                      <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(TIER_BASE_PER_UNIT.economy)}</td>
-                                      <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(TIER_BASE_PER_UNIT.standard)}</td>
-                                      <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(TIER_BASE_PER_UNIT.premium)}</td>
-                                    </tr>
-                                    <tr className="border-b border-slate-200">
-                                      <td className="py-2 px-2">M1 検査倍率（標準設定）</td>
-                                      <td className="py-2 px-2 text-right tabular-nums">×{INSPECTION_MULTIPLIER[PRESET_INSPECTION.economy].toFixed(2)}</td>
-                                      <td className="py-2 px-2 text-right tabular-nums">×{INSPECTION_MULTIPLIER[PRESET_INSPECTION.standard].toFixed(2)}</td>
-                                      <td className="py-2 px-2 text-right tabular-nums">×{INSPECTION_MULTIPLIER[PRESET_INSPECTION.premium].toFixed(2)}</td>
-                                    </tr>
-                                    <tr className="border-b border-slate-200">
-                                      <td className="py-2 px-2">F0 案件固定費（初期＋進行管理）</td>
-                                      <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(fixedSum("economy"))}</td>
-                                      <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(fixedSum("standard"))}</td>
-                                      <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(fixedSum("premium"))}</td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </div>
-
-                              <div className="mt-4 font-semibold text-slate-900 mb-1">L0 基礎単価差分の由来</div>
-                              <div className="text-slate-600 mb-2">
-                                L0（基礎単価）は、単価算定の最初の層であり、コード上は <span className="font-mono">TIER_BASE_PER_UNIT</span> によりプランごとに固定される。
-                                サイズ・色・dpi・形式・OCR・メタデータ・取扱等の加算（L1〜）や、検査倍率（M1）とは独立である。
-                                したがって、プラン間の L0 差は、「基礎単価表（プラン別）」の差に起因する。
-                                この表は、当社が想定する基本作業負荷・品質責任の水準差（工程内是正の前提、レビュー工数、差戻し対応の厚み等）を反映するための設計値である。
-                              </div>
-
-                              <div className="border border-slate-300 mb-2">
-                                <table className="w-full text-[11px]">
-                                  <thead className="bg-slate-50">
-                                    <tr className="border-b border-slate-300">
-                                      <th className="py-2 px-2 text-left">プラン</th>
-                                      <th className="py-2 px-2 text-right">L0 基礎単価（税抜・1単位）</th>
-                                      <th className="py-2 px-2 text-right">対エコノミー差</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {(["economy","standard","premium"] as Tier[]).map((t) => (
-                                      <tr key={t} className="border-b border-slate-200">
-                                        <td className="py-2 px-2">{tierLabel(t)}</td>
-                                        <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(TIER_BASE_PER_UNIT[t])}</td>
-                                        <td className="py-2 px-2 text-right tabular-nums">
-                                          {t === "economy" ? "—" : fmtJPY(TIER_BASE_PER_UNIT[t] - TIER_BASE_PER_UNIT["economy"])}
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-
-                              <div className="mt-5 font-semibold text-slate-900 mb-1">3) 作業対象別の比較（単価・金額）</div>
-                              <div className="text-slate-600 mb-2">
-                                下表は、作業対象（行）ごとに、3プランの単価と金額を横並びで示し、差分の発生源を一覧できるようにしたものである。
-                              </div>
-
-                              <div className="border border-slate-300">
-                                <table className="w-full text-[10.5px]">
-                                  <thead className="bg-slate-50">
-                                    <tr className="border-b border-slate-300">
-                                      <th className="py-2 px-2 text-left">作業対象</th>
-                                      <th className="py-2 px-2 text-right">数量</th>
-                                      <th className="py-2 px-2 text-right">Eco 単価</th>
-                                      <th className="py-2 px-2 text-right">Std 単価</th>
-                                      <th className="py-2 px-2 text-right">Pre 単価</th>
-                                      <th className="py-2 px-2 text-right">Eco 金額</th>
-                                      <th className="py-2 px-2 text-right">Std 金額</th>
-                                      <th className="py-2 px-2 text-right">Pre 金額</th>
-                                      <th className="py-2 px-2 text-left">相対（行内）</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {data.workItems.map((w) => {
-                                      const uEco = calcEco.unitBreakdowns[w.id]?.finalUnitPrice ?? 0;
-                                      const uStd = calcStd.unitBreakdowns[w.id]?.finalUnitPrice ?? 0;
-                                      const uPre = calcPre.unitBreakdowns[w.id]?.finalUnitPrice ?? 0;
-
-                                      const aEco = uEco * Math.max(0, w.qty);
-                                      const aStd = uStd * Math.max(0, w.qty);
-                                      const aPre = uPre * Math.max(0, w.qty);
-
-                                      return (
-                                        <tr key={w.id} className="border-b border-slate-200 align-top">
-                                          <td className="py-2 px-2">
-                                            <div className="font-semibold text-slate-900">{w.title}</div>
-                                            <div className="text-slate-600">
-                                              {sizeLabel(w.sizeClass)} / {colorModeLabel(w.colorMode)} / {dpiLabel(w.dpi)} / {joinFormats(w.formats)}
-                                            </div>
-                                          </td>
-                                          <td className="py-2 px-2 text-right tabular-nums">{num(w.qty)}{w.unit}</td>
-                                          <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(uEco)}</td>
-                                          <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(uStd)}</td>
-                                          <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(uPre)}</td>
-                                          <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(aEco)}</td>
-                                          <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(aStd)}</td>
-                                          <td className="py-2 px-2 text-right tabular-nums">{fmtJPY(aPre)}</td>
-                                          <td className="py-2 px-2">
-                                            <TriBar values={[aEco, aStd, aPre]} />
-                                            <div className="mt-1 text-[10px] text-slate-600">
-                                              Eco / Std / Pre（黒 / 灰 / 白枠）
-                                            </div>
-                                          </td>
-                                        </tr>
-                                      );
-                                    })}
-                                  </tbody>
-                                </table>
-                              </div>
-
-                              <div className="mt-4 text-[11px] text-slate-600">
-                                注：本頁の差分は「プラン差分（Tier 基礎単価・固定費）」と「検査レベル（標準設定の倍率）」に起因する。
-                                サイズ・色・dpi・形式・OCR・メタデータ・取扱等の加算は、作業対象の入力値に依存するため、プラン比較では同一条件として扱っている。
-                              </div>
-                            </div>
-                          </DocPage>
-                        );
-                      })()
-                    ) : null}
-                </div>
-              </div>
-            ) : null}
-
-{view === "spec" ? (
-              <div className="print-area">
-                {(() => {
-                  const sections = buildSpecSections(data);
-                  const chunks =
-                    sections.length <= 8
-                      ? [sections.slice(0, 5), sections.slice(5)]
-                      : [sections.slice(0, 4), sections.slice(4, 8), sections.slice(8)];
-                  const pages = chunks.filter((c) => c.length > 0);
-                  const total = pages.length;
-
-                  return pages.map((chunk, idx) => (
-                    <DocPage
-                      key={`spec-${idx}`}
-                      header={null}
-                      footer={<DocFooter pageNo={idx + 1} totalPages={total} note="" />}
-                    >
-                      {idx === 0 ? (
-                        <div className="mb-4">
-                          <div className="text-center text-lg font-semibold tracking-wide">仕様書</div>
-                          <div className="mt-2 text-xs leading-relaxed text-slate-800">
-                            <div>案件名：{data.projectName || "—"}</div>
-                            <div>仕様レベル：{specProfilePublicLabel(data.specProfile)}</div>
-                            <div>発行日：{data.issueDate || "—"}</div>
-                          </div>
-                        </div>
-                      ) : null}
-
-                      <div className="space-y-4">
-                        {chunk.map((s, i) => (
-                          <section key={`${s.title}-${i}`} className="break-inside-avoid">
-                            <div className="font-semibold">{s.title}</div>
-                            <div className="mt-1 whitespace-pre-line text-sm leading-relaxed text-slate-800">
-                              {s.body}
-                            </div>
-                          </section>
-                        ))}
+                    <EstimateComparison data={data} />
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                      <div className="font-semibold text-slate-900">比較表はオフになっています。</div>
+                      <div className="mt-1 text-slate-600">
+                        「入力画面」で <span className="font-semibold">内部用：計算表</span> と <span className="font-semibold">内部用：3プラン比較表</span> をONにすると表示されます。
                       </div>
-                    </DocPage>
-                  ));
-                })()}
+                    </div>
+                  )}
               </div>
             ) : null}
 
