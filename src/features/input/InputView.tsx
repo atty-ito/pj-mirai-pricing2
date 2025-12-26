@@ -59,8 +59,6 @@ export function InputView({
 
   return (
     <div className="space-y-6 pb-20">
-      
-      {/* 上部：プラン選択とサマリ */}
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm sticky top-0 z-10">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-4">
@@ -96,7 +94,6 @@ export function InputView({
         </div>
       </div>
 
-      {/* L1: 基本情報 */}
       <Card title="L1 基本情報・要件定義" tone="indigo" subtitle="顧客情報、管理者、納期、仕様書">
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-3">
@@ -201,7 +198,6 @@ export function InputView({
         </div>
       </Card>
 
-      {/* L2: 運用・輸送 */}
       <Card title="L2 運用・輸送条件" tone="slate" subtitle="作業場所、セキュリティ、搬送コスト">
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-6">
@@ -255,7 +251,6 @@ export function InputView({
         </div>
       </Card>
 
-      {/* L3: 業務内訳 */}
       <Card title="L3 業務内訳（明細行）" tone="emerald" subtitle="工程ごとに行を分けて登録" right={<TinyButton label="＋行を追加" onClick={addWorkItem} kind="primary" />}>
         <div className="space-y-6">
           {data.workItems.map((w, idx) => {
@@ -299,7 +294,6 @@ export function InputView({
                     <SelectField label="色空間" value={w.colorSpace} onChange={(v) => updateWorkItem(w.id, { colorSpace: v as any })} options={COLOR_OPTS.map(c => ({value:c, label:c}))} />
                   </div>
                   
-                  {/* 出力形式（複数選択 + 自由記述） */}
                   <div className="col-span-12 bg-slate-50 p-2 rounded border border-slate-200">
                     <Label>出力形式（複数選択可）</Label>
                     <div className="flex flex-wrap gap-x-4 gap-y-2 mt-1">
@@ -320,10 +314,10 @@ export function InputView({
                   </div>
 
                   <div className="col-span-12 bg-slate-50 p-3 rounded border border-slate-200 grid grid-cols-4 gap-2">
-                    <Checkbox label="脆弱資料 (C)" checked={w.fragile} onChange={(v) => updateWorkItem(w.id, { fragile: v })} hint="係数C加算" />
-                    <Checkbox label="解体可能" checked={w.dismantleAllowed} onChange={(v) => updateWorkItem(w.id, { dismantleAllowed: v })} hint="不可時係数増" />
-                    <Checkbox label="復元必須" checked={w.restorationRequired} onChange={(v) => updateWorkItem(w.id, { restorationRequired: v })} hint="係数C加算" />
-                    <Checkbox label="非接触必須" checked={w.requiresNonContact} onChange={(v) => updateWorkItem(w.id, { requiresNonContact: v })} hint="係数C加算" />
+                    <Checkbox label="脆弱資料 (C)" checked={w.fragile} onChange={(v) => updateWorkItem(w.id, { fragile: v })} hint="係数+0.5" />
+                    <Checkbox label="解体可能" checked={w.dismantleAllowed} onChange={(v) => updateWorkItem(w.id, { dismantleAllowed: v })} hint="不可時+0.15" />
+                    <Checkbox label="復元必須" checked={w.restorationRequired} onChange={(v) => updateWorkItem(w.id, { restorationRequired: v })} hint="係数+0.15" />
+                    <Checkbox label="非接触必須" checked={w.requiresNonContact} onChange={(v) => updateWorkItem(w.id, { requiresNonContact: v })} hint="係数+0.1" />
                   </div>
 
                   <div className="col-span-12">
@@ -337,7 +331,7 @@ export function InputView({
                       基礎単価: <span className="font-mono">{bd.base}</span> × 
                       係数: <span className="font-mono font-bold text-emerald-700">{bd.factors.capped.toFixed(2)}</span> 
                       (C:{bd.factors.c.toFixed(2)} Q:{bd.factors.q.toFixed(2)} P:{bd.factors.p.toFixed(2)} I:{bd.factors.i.toFixed(2)} K:{bd.factors.k.toFixed(2)})
-                      + 加算: <span className="font-mono">{bd.sizeAdder + bd.formatAdder}</span>
+                      + 加算: <span className="font-mono">{bd.adders}</span>
                     </div>
                     <div className="text-right">
                       単価: <span className="font-bold text-lg tabular-nums text-slate-800">{fmtJPY(bd.unitPrice)}</span>
@@ -351,7 +345,6 @@ export function InputView({
         </div>
       </Card>
 
-      {/* 特殊工程・実費（復活・強化） */}
       <Card title="特殊工程・実費" tone="rose" subtitle="市場価格（税込）を入力 → 30%諸経費を自動加算（媒体の場合は標準単価と比較し高い方を適用）" right={<TinyButton label="＋実費追加" onClick={addMiscExpense} kind="primary" />}>
         <div className="space-y-4">
           {data.miscExpenses.map((m) => (
@@ -375,7 +368,6 @@ export function InputView({
               <div className="col-span-12 text-[10px] text-rose-700 flex justify-between items-center bg-white/50 p-1 rounded mt-1">
                 <div>
                   <span className="font-bold">種別:</span> 
-                  {/* ★修正: e.target.value を "manual" | "expense" にキャスト */}
                   <select 
                     className="ml-1 border rounded bg-transparent"
                     value={m.calcType} 
@@ -399,7 +391,6 @@ export function InputView({
         </div>
       </Card>
 
-      {/* L4: 画像処理・検査 */}
       <Card title="L4 画像処理・検査・係数パラメータ" tone="amber" subtitle="Q(Quality) / P(Process) / K(K_load)">
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-6">
@@ -472,7 +463,6 @@ export function InputView({
         </div>
       </Card>
 
-      {/* L5: 納品・媒体 */}
       <Card title="L5 納品・保管・消去" tone="slate" subtitle="成果物の納品形態とアフターフォロー">
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-12">
@@ -520,7 +510,6 @@ export function InputView({
           </div>
         </div>
       </Card>
-
     </div>
   );
 }

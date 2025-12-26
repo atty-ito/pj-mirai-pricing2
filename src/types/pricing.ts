@@ -32,62 +32,52 @@ export type WorkItem = {
   sizeClass: SizeClass;
   resolution: Dpi;
   colorSpace: ColorMode;
-  fileFormats: FileFormat[]; // 複数選択可
-  fileFormatsFree: string;   // 形式の自由入力欄
+  fileFormats: FileFormat[]; 
+  fileFormatsFree: string;   
   notes: string;
-
-  // 係数C（Condition）に関わる原本状態フラグ
   fragile: boolean;
   dismantleAllowed: boolean;
   restorationRequired: boolean;
   requiresNonContact: boolean;
 };
 
-// 自由入力の実費行
 export type MiscExpense = {
   id: string;
   label: string;
   qty: number;
   unit: string;
-  unitPrice: number; // 市場価格（税込）を入力
-  amount: number;    // 計算結果
+  unitPrice: number;
+  amount: number;
   note?: string;
-  calcType: "manual" | "expense"; // expenseの場合、(市場価格 * 1.3) or (規定単価) の高い方を採用
+  calcType: "manual" | "expense"; 
 };
 
 export type Data = {
-  // L1: 基本情報
+  // L1
   jobNo: string;
   createdDate: string;
   subject: string;
   customerName: string;
   customerType: string;
   jurisdiction: string;
-  
   contactName: string;
   contactTel: string;
-  
   qualityManager: string;
   salesManager: string;
   supervisorCert: string;
-
   deadline: string;
   deadlineType: "絶対納期" | "目標納期";
   isExpress: boolean;
   expressLevel: "通常" | "特急(10営未満)" | "超特急(5営未満)";
-
   contractExists: boolean;
   meetingMemoExists: boolean;
-  
-  // 仕様書関連
-  specProfile: SpecProfile; // 仕様レベル
-  specProvidedByClient: boolean; // 仕様書支給有無
+  specProfile: SpecProfile;
+  specProvidedByClient: boolean;
   specStandard: boolean;
   privacyFlag: boolean;
-  
   notes: string;
 
-  // L2: 運用条件・輸送
+  // L2
   workLocation: "社内（高セキュリティ施設）" | "現地（出張）" | "外部委託（要承認）";
   strictCheckIn: boolean;
   checkInListProvided: boolean;
@@ -95,7 +85,7 @@ export type Data = {
   transportTrips: number;
   shippingType: "一般宅配" | "専用便" | "セキュリティ専用便" | "特殊セキュリティカー";
 
-  // 環境・前処理
+  // L3, L4, L5
   fumigation: boolean;
   tempHumidLog: boolean;
   neutralPaperBag: string;
@@ -103,8 +93,6 @@ export type Data = {
   unbinding: "なし" | "紐外し" | "和綴じ解体" | "ハードカバー解体";
   rebind: boolean;
   preprocessMemo: string;
-
-  // L4: 画像処理・メタデータ
   inspectionLevel: InspectionLevel;
   deltaE: boolean;
   reflectionSuppression: boolean;
@@ -112,18 +100,12 @@ export type Data = {
   trimming: string;
   binaryConversion: boolean;
   binaryThreshold: string;
-  
-  // OCR
   ocr: boolean;
   ocrProofread: boolean;
-
-  // メタデータ
   namingRule: "連番のみ" | "フォルダ名のみ" | "ファイル名（背文字）" | "ファイル名（完全手入力）" | "特殊命名規則";
   folderStructure: string;
   indexType: "なし" | "索引データ（Excel）" | "TSV（UTF-8 BOMなし）";
   lineFeed: "LF" | "CRLF";
-
-  // L5: 納品・媒体
   deliveryMedia: string[];
   mediaCount: number;
   labelPrint: boolean;
@@ -132,7 +114,7 @@ export type Data = {
   disposal: "なし" | "溶解処理" | "返却のみ";
   deliveryMemo: string;
 
-  // 係数パラメータ
+  // 係数
   tier: Tier;
   kLoadPct: number;
   factorCap: number;
@@ -150,7 +132,7 @@ export type Data = {
   inspectionApprover: string;
   inspectionRemarks: string;
 
-  // 互換性維持
+  // 互換性
   quotationNo: string;
   issuerOrg: string;
   workItems: WorkItem[];
@@ -158,7 +140,7 @@ export type Data = {
   
   // UI制御
   includeQuotation: boolean;
-  includePriceRationalePage: boolean; // ★追加: エラー原因だった箇所
+  includePriceRationalePage: boolean; // ★追加
   includeSpecDoc: boolean;
   includeInstructionDoc: boolean;
   includeInspectionDoc: boolean;

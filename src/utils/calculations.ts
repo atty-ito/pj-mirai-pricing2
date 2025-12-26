@@ -13,6 +13,11 @@ import { toInt } from "./formatters";
 // 型定義
 // ------------------------------------------------------------------
 
+export type FactorResult = {
+  value: number;
+  reasons: string[];
+};
+
 export type FactorBreakdown = {
   c: number; q: number; p: number; i: number; k: number;
   raw: number; capped: number;
@@ -23,12 +28,13 @@ export type UnitPriceBreakdown = {
   factors: FactorBreakdown;
   sizeAdder: number;
   formatAdder: number;
+  adders: number;
   unitPrice: number;
   subtotal: number;
   finalUnitPrice: number;
   inspectionMultiplier: number;
-  adders: number;
   formula: string;
+  factorDetails: string[]; // ★追加: 詳細理由リスト
 };
 
 export type LineItem = {
@@ -54,7 +60,7 @@ export type CalcResult = {
 };
 
 // ------------------------------------------------------------------
-// 係数計算ロジック (Ver.4 Formula)
+// 係数計算ロジック (詳細ログ付き)
 // ------------------------------------------------------------------
 
 export function getBaseUnit(service: ServiceCode, tier: Tier): number {
@@ -65,83 +71,69 @@ export function getBaseUnit(service: ServiceCode, tier: Tier): number {
   return def.min;
 }
 
-// C (Complexity): 原本状態
-export function factorC(item: WorkItem): number {
-  let c = 1.0;
-  // Ver.4: 脆弱性加算 係数1.5 (+200相当の重み)
-  if (item.fragile) c += 0.5; 
-  if (!item.dismantleAllowed) c += 0.15;
-  if (item.restorationRequired) c += 0.15;
-  if (item.requiresNonContact) c += 0.1;
-  return c;
+export function calcFactorC(item: WorkItem): FactorResult {
+  let v = 1.0;
+  const reasons: string[] = [];
+  if (item.fragile) { v += 0.5; reasons.push("脆弱資料 (+0.50)"); }
+  if (!item.dismantleAllowed) { v += 0.15; reasons.push("解体不可 (+0.15)"); }
+  if (item.restorationRequired) { v += 0.15; reasons.push("復元必須 (+0.15)"); }
+  if (item.requiresNonContact) { v += 0.1; reasons.push("非接触要求 (+0.10)"); }
+  return { value: v, reasons };
 }
 
-// Q (Quality): 画質・検査
-export function factorQ(item: WorkItem, inspectionLevel: string): number {
-  let q = 1.0;
+export function calcFactorQ(item: WorkItem, inspectionLevel: string): FactorResult {
+  let v = 1.0;
+  const reasons: string[] = [];
   const res = String(item.resolution);
+
+  if (res.includes("600")) { v += 2.5; reasons.push("高精細600dpi (+2.50)"); }
+  else if (res.includes("400")) { v += 0.5; reasons.push("精細400dpi (+0.50)"); }
   
-  // Ver.4: 解像度係数
-  // 600dpiは生産性が激減するため係数3.5 (Base + 2.5)
-  if (res.includes("600")) q += 2.5; 
-  // 400dpiは標準の1.5倍 (Base + 0.5)
-  else if (res.includes("400")) q += 0.5; 
-  // 300dpi = 1.0 (基準)
+  if (inspectionLevel.includes("二重")) { v += 0.5; reasons.push("二重全数検査 (+0.50)"); }
+  else if (inspectionLevel.includes("全数")) { v += 0.2; reasons.push("全数検査 (+0.20)"); }
 
-  // 検査係数
-  if (inspectionLevel.includes("二重")) q += 0.5; // +50%
-  else if (inspectionLevel.includes("全数")) q += 0.2; // +20%
+  if (item.colorSpace === "AdobeRGB") { v += 0.1; reasons.push("AdobeRGB管理 (+0.10)"); }
 
-  if (item.colorSpace === "AdobeRGB") q += 0.1; // +10%
-
-  return q;
+  return { value: v, reasons };
 }
 
-// P (Process): 工程
-export function factorP(data: Data): number {
-  let p = 1.0;
-  if (data.tempHumidLog) p += 0.1;
-  if (data.fumigation) p += 0.1;
-  
-  // OCR校正（高負荷）
-  if (data.ocrProofread) p += 0.25;
-  
-  // 命名規則負荷
-  if (data.namingRule === "ファイル名（完全手入力）") p += 0.1;
-  
-  return p;
+export function calcFactorP(data: Data): FactorResult {
+  let v = 1.0;
+  const reasons: string[] = [];
+  if (data.tempHumidLog) { v += 0.1; reasons.push("温湿度ログ管理 (+0.10)"); }
+  if (data.fumigation) { v += 0.1; reasons.push("燻蒸処理管理 (+0.10)"); }
+  if (data.ocrProofread) { v += 0.25; reasons.push("OCR高精度校正 (+0.25)"); }
+  if (data.namingRule === "ファイル名（完全手入力）") { v += 0.1; reasons.push("ファイル名手入力 (+0.10)"); }
+  return { value: v, reasons };
 }
 
-// Interaction: 交互作用（上限1.10）
-export function factorInteraction(item: WorkItem, data: Data): number {
+export function calcFactorI(item: WorkItem, data: Data): FactorResult {
   let bonus = 0;
+  const reasons: string[] = [];
   const isHighRes = String(item.resolution).includes("600") || String(item.resolution).includes("400");
   const isFragile = item.fragile;
   const isAdobe = item.colorSpace === "AdobeRGB";
 
-  // 高難度×脆弱 はリスク増
-  if (isHighRes && isFragile) bonus += 0.05;
-  // AdobeRGB×脆弱（照明管理厳格化）
-  if (isAdobe && isFragile) bonus += 0.03;
+  if (isHighRes && isFragile) { bonus += 0.05; reasons.push("高難度×脆弱 (+0.05)"); }
+  if (isAdobe && isFragile) { bonus += 0.03; reasons.push("厳格色管理×脆弱 (+0.03)"); }
 
-  return 1.0 + Math.min(bonus, 0.10);
+  const cappedBonus = Math.min(bonus, 0.10);
+  return { value: 1.0 + cappedBonus, reasons };
 }
 
-// K_load: 繁忙期調整 (0-10%)
-export function factorKLoad(data: Data): number {
+export function calcFactorK(data: Data): FactorResult {
   const k = Math.max(0, Math.min(50, toInt(data.kLoadPct)));
-  return 1.0 + k / 100;
+  const v = 1.0 + k / 100;
+  const reasons: string[] = k > 0 ? [`繁忙期/特急調整 (+${(k/100).toFixed(2)})`] : [];
+  return { value: v, reasons };
 }
 
-export function applyFactorCap(m: number, data: Data): number {
+export function applyFactorCap(m: number, data: Data): { value: number; isCapped: boolean } {
   const cap = data.capExceptionApproved ? data.factorCap : 2.2;
-  return Math.min(m, cap);
+  return { value: Math.min(m, cap), isCapped: m > cap };
 }
 
-// ------------------------------------------------------------------
 // 単価計算 (Compute Unit Price)
-// ------------------------------------------------------------------
-
 export function computeUnitPrice(tier: Tier, inspectionLevel: string, w: WorkItem, dataMock?: Partial<Data>): UnitPriceBreakdown {
   const data: Data = {
     ...dataMock,
@@ -159,49 +151,45 @@ export function computeUnitPrice(tier: Tier, inspectionLevel: string, w: WorkIte
   } as Data;
 
   const base = getBaseUnit(w.service, tier);
+  const fc = calcFactorC(w);
+  const fq = calcFactorQ(w, inspectionLevel);
+  const fp = calcFactorP(data);
+  const fi = calcFactorI(w, data);
+  const fk = calcFactorK(data);
+
+  const rawFactor = fc.value * fq.value * fp.value * fi.value * fk.value;
+  const { value: cappedFactor, isCapped } = applyFactorCap(rawFactor, data);
+
+  const allReasons = [...fc.reasons, ...fq.reasons, ...fp.reasons, ...fi.reasons, ...fk.reasons];
+  if (isCapped) allReasons.push(`係数上限適用 (算出${rawFactor.toFixed(2)} → 上限${cappedFactor.toFixed(2)})`);
+
   const sizeAdder = SIZE_ADDERS[w.sizeClass] ?? 0;
-  
-  // 形式加算（配列対応）
-  const fmtAdder = (w.fileFormats || []).reduce(
-    (sum, f) => sum + (FORMAT_ADDERS[f] ?? 0), 0
-  );
+  const fmtAdder = (w.fileFormats || []).reduce((sum, f) => sum + (FORMAT_ADDERS[f] ?? 0), 0);
+  const adders = sizeAdder + fmtAdder;
 
-  const c = factorC(w);
-  const q = factorQ(w, inspectionLevel);
-  const p = factorP(data);
-  const inter = factorInteraction(w, data);
-  const k = factorKLoad(data);
-  
-  const rawFactor = c * q * p * inter * k;
-  const cappedFactor = applyFactorCap(rawFactor, data);
-
-  const unitPrice = Math.ceil((base * cappedFactor) + sizeAdder + fmtAdder);
+  const unitPrice = Math.ceil((base * cappedFactor) + adders);
 
   return {
     base,
-    factors: { c, q, p, i: inter, k, raw: rawFactor, capped: cappedFactor },
+    factors: { c: fc.value, q: fq.value, p: fp.value, i: fi.value, k: fk.value, raw: rawFactor, capped: cappedFactor },
     sizeAdder,
     formatAdder: fmtAdder,
-    adders: sizeAdder + fmtAdder,
+    adders,
     unitPrice,
     subtotal: unitPrice,
     finalUnitPrice: unitPrice,
-    inspectionMultiplier: q,
-    formula: `(${base} × ${cappedFactor.toFixed(2)}) + ${sizeAdder + fmtAdder} = ${unitPrice}`
+    inspectionMultiplier: fq.value, 
+    formula: `(${base} × ${cappedFactor.toFixed(2)}) + ${adders} = ${unitPrice}`,
+    factorDetails: allReasons // ★ここを追加
   };
 }
 
-// ------------------------------------------------------------------
 // メイン計算 (Calculate All)
-// ------------------------------------------------------------------
-
 export function computeCalc(data: Data): CalcResult {
   const lineItems: LineItem[] = [];
   const unitBreakdowns: Record<string, UnitPriceBreakdown> = {};
-
   let totalVol = 0;
 
-  // L3: 業務項目
   for (const w of data.workItems) {
     const qty = toInt(w.qty);
     totalVol += qty;
@@ -211,10 +199,6 @@ export function computeCalc(data: Data): CalcResult {
 
     const amount = bd.unitPrice * qty;
     const serviceName = SERVICE_DEFINITIONS[w.service]?.name || w.service;
-    
-    // 詳細な内訳テキスト作成
-    const explain = `Base:${bd.base} × Factor:${bd.factors.capped.toFixed(2)} (C${bd.factors.c.toFixed(2)} Q${bd.factors.q.toFixed(2)} P${bd.factors.p.toFixed(2)}) + S:${bd.adders}`;
-
     const formatStr = [...(w.fileFormats || []), w.fileFormatsFree].filter(Boolean).join("・");
 
     lineItems.push({
@@ -226,39 +210,32 @@ export function computeCalc(data: Data): CalcResult {
       unit: w.unit,
       unitPrice: bd.unitPrice,
       amount,
-      explain,
+      explain: "基本技術料＋仕様加算",
       kind: "work"
     });
 
     addProcessLineItems(lineItems, w, data, qty);
   }
 
-  // L1, L2, L5: 固定費
   addFixedLineItems(lineItems, data, totalVol);
 
-  // Misc: 特殊工程・実費
   for (const m of data.miscExpenses) {
     let finalUnitPrice = toInt(m.unitPrice);
     let explain = "手入力";
 
     if (m.calcType === "expense") {
-      // 市場価格の30%乗せ
       const withMarkup = Math.round(finalUnitPrice * 1.3);
-      
-      // HDD/SSDの場合の比較ロジック
       if (m.label.toUpperCase().includes("HDD") || m.label.toUpperCase().includes("SSD")) {
         const stdPrice = STANDARD_FIXED_COSTS.HDD;
         if (withMarkup > stdPrice) {
           finalUnitPrice = withMarkup;
-          explain = `実費+30%適用 (${withMarkup.toLocaleString()} > 規定${stdPrice.toLocaleString()})`;
         } else {
           finalUnitPrice = stdPrice;
-          explain = `規定単価適用 (${stdPrice.toLocaleString()} > 算出${withMarkup.toLocaleString()})`;
         }
       } else {
         finalUnitPrice = withMarkup;
-        explain = "市場価格 + 30%諸経費";
       }
+      explain = "機材調達・設定費として";
     }
 
     const amt = finalUnitPrice * toInt(m.qty);
@@ -295,8 +272,8 @@ function addFixedLineItems(lines: LineItem[], data: Data, totalVol: number) {
   for (const t of BASE_FEE_THRESHOLDS) {
     if (totalVol <= t.limit) { baseFee = t.fee; break; }
   }
-  lines.push(createLine("F-BASE", "L1", "基本料金", `案件規模調整 (Vol: ${totalVol.toLocaleString()})`, 1, "式", baseFee));
-  lines.push(createLine("L1-SOW", "L1", "要件定義・仕様策定", "SOW作成・合意形成", 1, "式", 15000));
+  lines.push(createLine("F-BASE", "L1", "基本料金", `PM費・工程設計`, 1, "式", baseFee));
+  lines.push(createLine("L1-SOW", "L1", "要件定義・仕様策定", "仕様書作成・合意形成", 1, "式", 15000));
   
   const dist = toInt(data.transportDistanceKm);
   const trips = Math.max(1, toInt(data.transportTrips));
