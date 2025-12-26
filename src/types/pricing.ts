@@ -4,7 +4,6 @@
 
 export type Tier = "premium" | "standard" | "economy";
 
-// 旧版の選択肢定義を型として復活
 export const INSPECTION_LEVELS = [
   "簡易目視検査 (抜き取り)",
   "標準全数検査 (作業者のみ)",
@@ -30,14 +29,16 @@ export const SERVICE_TYPES = {
 export type ServiceCode = keyof typeof SERVICE_TYPES;
 
 export const SIZE_CLASS = {
-  "A4/B5": 0,
+  "A4以下": 0, "A4/B5": 0, // 互換性のため両方維持
   "A3": 0,
   "B4": 50,
   "A2": 2000,
+  "A2以上": 2000,
   "B2": 2500,
   "A1": 3000,
   "B3": 1500,
-  "A0/長尺": 4000,
+  "A0": 4000, "A0/長尺": 4000,
+  "図面特大": 5000,
 } as const;
 export type SizeClass = keyof typeof SIZE_CLASS;
 
@@ -46,7 +47,7 @@ export type SizeClass = keyof typeof SIZE_CLASS;
 // ------------------------------------------------------------------
 
 export type WorkItem = {
-  id: string; // Reactのkey用にstring推奨（旧版はnumberだがuuid等へ移行しやすいようstringへ）
+  id: string; 
   
   // 基本仕様
   service: ServiceCode;
@@ -66,7 +67,7 @@ export type WorkItem = {
   requiresNonContact: boolean;  // 非接触要求
 };
 
-// 自由入力の実費行（現行版の良さを残すための受け皿）
+// 自由入力の実費行
 export type MiscExpense = {
   id: string;
   label: string;
@@ -75,7 +76,7 @@ export type MiscExpense = {
   unitPrice: number;
   amount: number; // 数量×単価
   note?: string;
-  calcType: "manual" | "expense"; // expenseなら30%乗せ等のロジックを想定
+  calcType: "manual" | "expense";
 };
 
 export type Data = {
@@ -84,18 +85,18 @@ export type Data = {
   createdDate: string; // 発行日 (YYYY-MM-DD)
   subject: string;     // 件名
   customerName: string;
-  customerType: string; // 官公庁・自治体 etc
+  customerType: string;
   jurisdiction: string; // 主管課
   
   contactName: string; // 担当者名
   contactTel: string;
   
-  // 管理者・資格（復活）
+  // 管理者・資格
   qualityManager: string; // 品質責任者
   salesManager: string;   // 営業担当
   supervisorCert: string; // 監督者資格
 
-  // 納期・特急（復活）
+  // 納期・特急
   deadline: string;
   deadlineType: "絶対納期" | "目標納期";
   isExpress: boolean;
@@ -150,7 +151,7 @@ export type Data = {
   lineFeed: "LF" | "CRLF";
 
   // --- L5: 納品・媒体 ---
-  deliveryMedia: string[]; // "HDD/SSD", "DVD-R" などを配列で保持
+  deliveryMedia: string[];
   mediaCount: number;
   labelPrint: boolean;
   longTermStorageMonths: number;
@@ -164,21 +165,30 @@ export type Data = {
   factorCap: number;      // 係数上限 (通常2.2 / 例外2.5)
   capExceptionApproved: boolean; // 例外承認フラグ
 
-  // --- そのほか（現行版との互換維持用） ---
-  quotationNo: string; // jobNoと重複するが、見積No採番ロジック用に残す
-  issuerOrg: string;   // 発行元会社情報などは定数管理もできるが、編集可能にするならDataに持つ
+  // --- 検査結果（Step 1で漏れていたフィールドを追加） ---
+  inspectionReportNo: string;
+  inspectionIssueDate: string;
+  inspectionDate: string;
+  inspectionOverall: "pass" | "conditional" | "fail";
+  inspectionDefectCount: number;
+  inspectionReworkCount: number;
+  inspectionCheckedCount: number;
+  inspectionInspector: string;
+  inspectionApprover: string;
+  inspectionRemarks: string;
+
+  // --- そのほか（互換維持用） ---
+  quotationNo: string;
+  issuerOrg: string;
   
   workItems: WorkItem[];
-  miscExpenses: MiscExpense[]; // 自由入力枠
+  miscExpenses: MiscExpense[];
   
-  // 帳票出力フラグ（UI制御用）
+  // 帳票出力フラグ
   includeQuotation: boolean;
   includeSpecDoc: boolean;
   includeInstructionDoc: boolean;
   includeInspectionDoc: boolean;
-  
-  // 以下、現行版の残骸だが、一旦エラー回避のために残すか、ロジック再構築で不要になれば削除
-  // taxRate: number; // 常に0.1とするなら計算ロジック内で定数化でOK
 };
 
 // 画面表示切替用
