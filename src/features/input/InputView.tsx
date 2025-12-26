@@ -1,7 +1,7 @@
 import { Data, WorkItem, Tier, InspectionLevel, ServiceCode, ColorMode, Dpi, SizeClass } from "../../types/pricing";
 import { CalcResult } from "../../utils/calculations";
-import { fmtJPY, toInt, allocateQuotationNo, suggestQuotationNo } from "../../utils/formatters";
-import { SERVICE_DEFINITIONS, SIZE_ADDERS, RESOLUTIONS, COLOR_OPTS, ISSUER, INSPECTION_LEVELS } from "../../constants/coefficients";
+import { fmtJPY, allocateQuotationNo, toInt } from "../../utils/formatters";
+import { SERVICE_DEFINITIONS, SIZE_ADDERS, RESOLUTIONS, COLOR_OPTS, INSPECTION_LEVELS } from "../../constants/coefficients";
 import { Card } from "../../components/common/Card";
 import { TextField } from "../../components/common/TextField";
 import { TextAreaField } from "../../components/common/TextAreaField";
@@ -18,7 +18,6 @@ type Props = {
   addWorkItem: () => void;
   removeWorkItem: (id: string) => void;
   updateWorkItem: (id: string, patch: Partial<WorkItem>) => void;
-  // MiscExpense用のハンドラは互換性維持のため残すが、今回はL3に統合されるため主要ではなくなる
   addMiscExpense: () => void;
   removeMiscExpense: (id: string) => void;
   updateMiscExpense: (id: string, patch: any) => void;
@@ -26,7 +25,6 @@ type Props = {
 
 export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, updateWorkItem }: Props) {
   
-  // プラン変更ハンドラ
   const applyTier = (t: Tier) => {
     setData((p) => {
       const base: Partial<Data> =
@@ -86,7 +84,6 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
               <div className="flex-1">
                 <TextField label="Job No" value={data.jobNo} onChange={(v) => setData(p => ({...p, jobNo: v}))} />
               </div>
-              {/* 採番機能の互換性維持 */}
               <button type="button" onClick={() => setData(p => ({...p, jobNo: allocateQuotationNo(p.createdDate)}))} className="mb-1 p-1 text-slate-400 hover:text-indigo-600" title="採番">#</button>
             </div>
           </div>
@@ -120,7 +117,6 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
             <TextField label="監督者資格" value={data.supervisorCert} onChange={(v) => setData(p => ({...p, supervisorCert: v}))} placeholder="例: 文書情報管理士1級" />
           </div>
 
-          {/* 納期・特急 */}
           <div className="col-span-12 mt-2 pt-4 border-t border-indigo-100 grid grid-cols-12 gap-4 bg-indigo-50/50 p-3 rounded-lg">
             <div className="col-span-3">
               <TextField label="納期" value={data.deadline} onChange={(v) => setData(p => ({...p, deadline: v}))} placeholder="YYYY-MM-DD" />
@@ -148,6 +144,10 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
             <Checkbox label="個人情報あり" checked={data.privacyFlag} onChange={(v) => setData(p => ({...p, privacyFlag: v}))} />
             <Checkbox label="契約書受領済" checked={data.contractExists} onChange={(v) => setData(p => ({...p, contractExists: v}))} />
             <Checkbox label="打合記録あり" checked={data.meetingMemoExists} onChange={(v) => setData(p => ({...p, meetingMemoExists: v}))} />
+          </div>
+          
+          <div className="col-span-12 mt-2">
+            <TextAreaField label="全体備考（顧客要望・背景など）" value={data.notes} onChange={(v) => setData(p => ({...p, notes: v}))} rows={2} />
           </div>
         </div>
       </Card>
@@ -206,11 +206,11 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
         </div>
       </Card>
 
-      {/* L3: 業務内訳（WorkItems） - ここが最も重要 */}
+      {/* L3: 業務内訳 */}
       <Card title="L3 業務内訳（明細行）" tone="emerald" subtitle="“一式”禁止。工程ごとに行を分けて登録。" right={<TinyButton label="＋行を追加" onClick={addWorkItem} kind="primary" />}>
         <div className="space-y-6">
           {data.workItems.map((w, idx) => {
-            const bd = calc.unitBreakdowns[w.id]; // 計算結果を参照
+            const bd = calc.unitBreakdowns[w.id];
             return (
               <div key={w.id} className="rounded-xl border-2 border-emerald-100 bg-white p-4 shadow-sm relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
@@ -270,7 +270,6 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
                   </div>
                 </div>
 
-                {/* 計算結果プレビュー（行） */}
                 {bd && (
                   <div className="mt-3 pt-2 border-t border-emerald-100 text-xs text-slate-500 flex justify-between items-center bg-emerald-50/30 p-2 rounded">
                     <div>
@@ -291,7 +290,7 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
         </div>
       </Card>
 
-      {/* L4: 画像処理・メタデータ・検査 */}
+      {/* L4: 画像処理・検査 */}
       <Card title="L4 画像処理・検査・係数パラメータ" tone="amber" subtitle="Q(Quality) / P(Process) / K(K_load) に関わる設定">
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-6">
@@ -326,7 +325,7 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
 
           <div className="col-span-12 grid grid-cols-4 gap-4 bg-amber-50 p-3 rounded">
             <Checkbox label="傾き補正" checked={data.deskew} onChange={(v) => setData(p => ({...p, deskew: v}))} />
-            <Checkbox label="トリミング" checked={!!data.trimming} onChange={(e) => {/* UI簡略化のためcheckboxのみ */}} hint="※内容は詳細入力へ" />
+            <Checkbox label="トリミング" checked={!!data.trimming} onChange={(e) => {/* UI簡易化 */}} hint="※詳細は仕様書へ反映" />
             <Checkbox label="2値化処理" checked={data.binaryConversion} onChange={(v) => setData(p => ({...p, binaryConversion: v}))} />
             {data.binaryConversion && <TextField label="2値化閾値" value={data.binaryThreshold} onChange={(v) => setData(p => ({...p, binaryThreshold: v}))} />}
           </div>

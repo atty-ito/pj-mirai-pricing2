@@ -1,11 +1,11 @@
 import { Data } from "../../types/pricing";
 import { SERVICE_DEFINITIONS } from "../../constants/coefficients";
 import { SealBox } from "../../components/common/SealBox";
-import { toInt } from "../../utils/formatters";
+import { toInt, sizeLabel, colorModeLabel, dpiLabel } from "../../utils/formatters";
 
 type Props = {
   data: Data;
-  setData: any; // 検査結果の入力機能は今回は省き、印刷用ビューとして特化
+  setData: any;
 };
 
 const CHECKLIST_ITEMS = [
@@ -30,7 +30,6 @@ export function InspectionView({ data }: Props) {
         <div className="text-xs text-slate-600 mt-1 text-right">Job No: {data.jobNo}</div>
       </div>
 
-      {/* 1. 基本情報・検査条件 */}
       <div className="mb-6 border border-slate-400">
         <div className="bg-slate-100 p-1 text-xs font-bold border-b border-slate-400 text-center">1. 検査条件</div>
         <div className="grid grid-cols-2 text-xs">
@@ -65,7 +64,6 @@ export function InspectionView({ data }: Props) {
         </div>
       </div>
 
-      {/* 2. 共通チェックリスト */}
       <div className="mb-6">
         <div className="text-sm font-bold mb-2">2. 共通検査項目（全行程共通）</div>
         <table className="w-full text-xs border-collapse border border-slate-400">
@@ -90,7 +88,6 @@ export function InspectionView({ data }: Props) {
         </table>
       </div>
 
-      {/* 3. 作業項目別 検査記録 */}
       <div>
         <div className="text-sm font-bold mb-2">3. 作業項目別 詳細検査</div>
         <div className="space-y-4">
@@ -106,11 +103,11 @@ export function InspectionView({ data }: Props) {
                 <div className="col-span-8 border-r border-slate-200 pr-2">
                   <div className="font-bold text-[10px] text-slate-500 mb-1">仕様要件</div>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                    <div>サイズ: {w.sizeClass}</div>
-                    <div>解像度: {w.resolution}</div>
-                    <div>色空間: {w.colorSpace}</div>
+                    <div>サイズ: {sizeLabel(w.sizeClass)}</div>
+                    <div>解像度: {dpiLabel(w.resolution)}</div>
+                    <div>色空間: {colorModeLabel(w.colorSpace)}</div>
                     <div>形式: {w.fileFormats.join(", ")}</div>
-                    {w.ocr && <div>OCR: あり ({w.ocrProofread ? "校正済" : "未校正"})</div>}
+                    {data.ocr && <div>OCR: あり ({data.ocrProofread ? "校正済" : "未校正"})</div>}
                     {w.fragile && <div className="text-rose-600 font-bold">※脆弱資料</div>}
                   </div>
                 </div>
@@ -130,7 +127,6 @@ export function InspectionView({ data }: Props) {
         </div>
       </div>
 
-      {/* 署名欄 */}
       <div className="mt-8 flex justify-end gap-8 text-xs">
         <div className="text-center">
           <div className="mb-1">品質管理責任者</div>

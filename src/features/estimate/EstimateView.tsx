@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Data } from "../../types/pricing";
-import { CalcResult, LineItem } from "../../utils/calculations";
+import { CalcResult } from "../../utils/calculations";
 import { fmtJPY, suggestQuotationNo } from "../../utils/formatters";
 import { SealBox } from "../../components/common/SealBox";
 import { ISSUER } from "../../constants/coefficients";
@@ -10,7 +10,6 @@ type Props = {
   calc: CalcResult;
 };
 
-// 帳票ヘッダー
 function DocHeader({ title, data }: { title: string; data: Data }) {
   const qno = data.quotationNo || suggestQuotationNo(data.createdDate);
   return (
@@ -47,7 +46,6 @@ function DocHeader({ title, data }: { title: string; data: Data }) {
   );
 }
 
-// 帳票フッター
 function DocFooter({ page, total }: { page: number; total: number }) {
   return (
     <div className="mt-auto pt-4 border-t border-slate-300 flex justify-between text-[10px] text-slate-500">
@@ -57,7 +55,6 @@ function DocFooter({ page, total }: { page: number; total: number }) {
   );
 }
 
-// ページコンテナ
 function Page({ children }: { children: ReactNode }) {
   return (
     <div className="print-page bg-white p-[20mm] min-h-[297mm] shadow-sm border mb-8 flex flex-col font-serif relative">
@@ -67,11 +64,8 @@ function Page({ children }: { children: ReactNode }) {
 }
 
 export function EstimateView({ data, calc }: Props) {
-  // ページネーション（簡易実装：行数が多い場合は分割が必要だが、今回は1ページに収める前提）
-  
   return (
     <div>
-      {/* 1枚目：見積書鑑（表紙） */}
       <Page>
         <DocHeader title="御 見 積 書" data={data} />
         
@@ -107,7 +101,6 @@ export function EstimateView({ data, calc }: Props) {
                   <td className="py-3 px-2 align-top">
                     <div className="font-bold text-slate-800">{item.name}</div>
                     <div className="text-slate-600 mt-1 whitespace-pre-wrap leading-tight">{item.spec}</div>
-                    {/* 積算根拠を表示（ここが重要） */}
                     <div className="text-[10px] text-slate-400 mt-1 font-mono">
                       [{item.phase}] {item.explain}
                     </div>

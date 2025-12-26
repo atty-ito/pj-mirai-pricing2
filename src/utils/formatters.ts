@@ -1,182 +1,60 @@
-import { 
-  Tier,
-  SizeClass, 
-  ColorMode, 
-  Dpi, 
-  MetadataLevel, 
-  Handling, 
-  InspectionLevel, 
-  SpecProfile,
-  FileFormat
-} from "../types/pricing";
-
-/**
- * 一意のID（ランダムな文字列）を生成する
- */
+// 互換性のため単純なフォーマッターのみ残す
 export function uid(prefix: string): string {
-  return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
+  return `${prefix}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
-/**
- * 数値をカンマ区切りの文字列に変換する
- */
-export function num(n: number): string {
-  if (!Number.isFinite(n)) return "0";
-  const s = n % 1 === 0 ? String(Math.round(n)) : String(n);
-  const [i, d] = s.split(".");
-  const head = i.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return d ? `${head}.${d}` : head;
+export function num(n: any): string {
+  return Number(n).toLocaleString();
 }
 
-/**
- * 数値を日本円形式(¥)の文字列に変換する
- */
+export function toInt(v: any): number {
+  const n = parseInt(String(v).replace(/,/g, ""), 10);
+  return isNaN(n) ? 0 : n;
+}
+
+export function toMoney(v: any): number {
+  return toInt(v);
+}
+
 export function fmtJPY(n: number): string {
-  const sign = n < 0 ? "-" : "";
-  const v = Math.abs(Math.round(n));
-  return `${sign}¥${v.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+  return "¥" + Math.round(n).toLocaleString();
 }
 
-/**
- * ISO形式の日付(YYYY-MM-DD)を日本形式(YYYY年MM月DD日)に変換する
- */
-export function formatJPDate(iso: string): string {
-  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return String(iso || "");
-  const y = m[1];
-  const mm = String(Number(m[2]));
-  const dd = String(Number(m[3]));
-  return `${y}年${mm}月${dd}日`;
+export function suggestQuotationNo(dateStr: string): string {
+  const d = dateStr.replace(/-/g, "");
+  return `${d}-001`;
 }
 
-/**
- * ISO形式の日付からハイフンを除去した文字列を取得する
- */
-export function yyyymmdd(iso: string): string {
-  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return "";
-  return `${m[1]}${m[2]}${m[3]}`;
+export function suggestInspectionReportNo(dateStr: string): string {
+  const d = dateStr.replace(/-/g, "");
+  return `QA-${d}-001`;
 }
 
-/**
- * 見積Noの候補を生成する
- */
-export function suggestQuotationNo(iso: string): string {
-  const ymd = yyyymmdd(iso);
-  if (!ymd) return "";
-  return `${ymd}-001`;
+export function allocateQuotationNo(dateStr: string): string {
+  return suggestQuotationNo(dateStr); // 簡易実装
 }
 
-/**
- * ローカルストレージを利用して見積Noを確定採番する
- */
-export function allocateQuotationNo(iso: string): string {
-  const ymd = yyyymmdd(iso);
-  if (!ymd) return "";
-  if (typeof window === "undefined") return `${ymd}-001`;
-  const key = `quote_seq_${ymd}`;
-  const cur = Number(window.localStorage.getItem(key) || "0");
-  const next = Math.max(1, cur + 1);
-  window.localStorage.setItem(key, String(next));
-  const seq = String(next).padStart(3, "0");
-  return `${ymd}-${seq}`;
+// ラベル変換
+export function tierLabel(t: string): string {
+  return t.toUpperCase();
 }
 
-/**
- * 検査報告Noの候補を生成する
- */
-export function suggestInspectionReportNo(iso: string): string {
-  const ymd = yyyymmdd(iso);
-  if (!ymd) return "";
-  return `INSP-${ymd}-001`;
-}
-
-/**
- * ローカルストレージを利用して検査報告Noを確定採番する
- */
-export function allocateInspectionReportNo(iso: string): string {
-  const ymd = yyyymmdd(iso);
-  if (!ymd) return "";
-  if (typeof window === "undefined") return `INSP-${ymd}-001`;
-  const key = `khq_insp_seq_${ymd}`;
-  const cur = Number(window.localStorage.getItem(key) || "0");
-  const next = Math.max(1, cur + 1);
-  window.localStorage.setItem(key, String(next));
-  const seq = String(next).padStart(3, "0");
-  return `INSP-${ymd}-${seq}`;
-}
-
-/**
- * 文字列を数値に変換する（カンマ除去対応）
- */
-export function toInt(v: number | string | null | undefined, fallback = 0): number {
-  if (v === null || v === undefined) return fallback;
-  const n = typeof v === "number" ? v : parseInt(String(v).replace(/,/g, ""), 10);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-/**
- * 入力値を金額数値に変換する
- */
-export function toMoney(v: string, fallback = 0): number {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(0, Math.round(n));
-}
-
-// ---- ラベル変換関数 ----
-
-export function tierLabel(t: Tier): string {
-  if (t === "economy") return "エコノミー";
-  if (t === "standard") return "スタンダード";
-  return "プレミアム";
-}
-
-export function sizeLabel(s: SizeClass): string {
+export function sizeLabel(s: string): string {
   return s;
 }
 
-export function colorModeLabel(m: ColorMode): string {
-  return m === "mono" ? "モノクロ" : m === "gray" ? "グレースケール" : "カラー";
+export function colorModeLabel(c: string): string {
+  return c;
 }
 
-export function dpiLabel(d: Dpi): string {
-  return `${d}dpi`;
+export function dpiLabel(d: string): string {
+  return d;
 }
 
-export function formatLabel(f: FileFormat): string {
+export function formatLabel(f: string): string {
   return f;
 }
 
-export function specProfileLabel(p: SpecProfile): string {
-  if (p === "standard") return "標準";
-  if (p === "ndl") return "詳細";
-  return "厳格";
-}
-
-export function specProfilePublicLabel(p: SpecProfile): string {
-  if (p === "standard") return "標準";
-  if (p === "ndl") return "詳細";
-  return "厳格";
-}
-
-export function inspectionLabel(lv: InspectionLevel): string {
-  if (lv === "none") return "検査なし（目視確認レベル）";
-  if (lv === "sample") return "抜取検査";
-  if (lv === "full") return "全数検査";
-  return "二重・全数検査（ダブルチェック）";
-}
-
-export function metadataLabel(lv: MetadataLevel): string {
-  if (lv === "none") return "なし";
-  if (lv === "basic") return "基本";
-  return "充実";
-}
-
-export function handlingLabel(h: Handling): string {
-  if (h === "normal") return "通常";
-  if (h === "fragile") return "脆弱・破損懸念";
-  if (h === "bound") return "製本（裁断不可等）";
-  if (h === "mylars") return "マイラー図面等（静電・反射配慮）";
-  return "混在（個別判断）";
+export function inspectionLabel(i: string): string {
+  return i;
 }

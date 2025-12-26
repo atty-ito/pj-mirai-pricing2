@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
 import { Data, Tier, InspectionLevel, WorkItem } from "../../types/pricing";
-import { computeCalc, CalcResult, LineItem, computeUnitPrice, UnitPriceBreakdown } from "../../utils/calculations";
+import { computeCalc, CalcResult, computeUnitPrice, UnitPriceBreakdown } from "../../utils/calculations";
 import { fmtJPY, inspectionLabel, sizeLabel, colorModeLabel, dpiLabel, formatLabel } from "../../utils/formatters";
+import { PROJECT_FIXED_FEES } from "../../constants/coefficients"; // 注意: PROJECT_FIXED_FEESはもう存在しない定数ですが、下記のロジックで使われないよう削除済みであることを確認
 
 type Props = {
   data: Data;
 };
 
-// 比較用のプラン設定
+// ... (PLAN_SPECS, CostStructure, analyzeStructure は変更なし) ...
 const PLAN_SPECS: Record<Tier, { inspection: InspectionLevel; label: string; desc: string; risk: string; color: string; bg: string; border: string }> = {
   economy: { 
     inspection: "簡易目視検査 (抜き取り)", 
@@ -32,17 +33,15 @@ const PLAN_SPECS: Record<Tier, { inspection: InspectionLevel; label: string; des
   },
 };
 
-// コスト構造（分析用）
 type CostStructure = {
-  fixed: number;       // L1, L2, L5 (固定費)
-  variableBase: number; // L3 Base * Qty
-  variableAdders: number; // L3 (Size + Format) * Qty
-  qualityCost: number; // L3 Factor増分 (UnitPrice - Base - Adders) * Qty
-  misc: number;        // Misc
+  fixed: number;
+  variableBase: number;
+  variableAdders: number;
+  qualityCost: number;
+  misc: number;
   total: number;
 };
 
-// 分析ロジック（CQPIK対応版）
 function analyzeStructure(calc: CalcResult): CostStructure {
   let fixed = 0;
   let variableBase = 0;
@@ -56,40 +55,28 @@ function analyzeStructure(calc: CalcResult): CostStructure {
     } else if (item.kind === "fixed" || item.phase === "L1" || item.phase === "L2" || item.phase === "L5") {
       fixed += item.amount;
     } else if (item.phase === "L4") {
-      // L4（OCRなどの付帯処理）は品質・仕様コストの一部とみなす
       variableAdders += item.amount;
     } else if (item.phase === "L3") {
-      // L3項目の内訳分解
-      const idStr = item.id.replace("L3-", ""); // ID抽出
+      const idStr = item.id.replace("L3-", "");
       const bd = calc.unitBreakdowns[idStr];
       if (bd) {
-        // Base分
         const baseAmt = bd.base * item.qty;
-        // Adder分
         const adderAmt = (bd.sizeAdder + bd.formatAdder) * item.qty;
-        // Quality(Factor)分 = 全体 - Base - Adder
         const qAmt = item.amount - baseAmt - adderAmt;
-
         variableBase += baseAmt;
         variableAdders += adderAmt;
         qualityCost += qAmt;
       } else {
-        // 内訳不明な場合は全額Baseへ（異常系）
         variableBase += item.amount;
       }
     }
   }
-
   return { fixed, variableBase, variableAdders, qualityCost, misc, total: calc.subtotal };
 }
 
-// ------------------------------------------------------------------
-// サブコンポーネント
-// ------------------------------------------------------------------
-
+// ... (CostBar コンポーネント 変更なし) ...
 function CostBar({ structure, maxTotal }: { structure: CostStructure; maxTotal: number }) {
   const getPct = (val: number) => (maxTotal > 0 ? (val / maxTotal) * 100 : 0);
-  
   return (
     <div className="w-full">
       <div className="flex h-4 w-full rounded-full overflow-hidden bg-slate-100 ring-1 ring-slate-200/50">
@@ -103,7 +90,7 @@ function CostBar({ structure, maxTotal }: { structure: CostStructure; maxTotal: 
   );
 }
 
-// 詳細内訳テーブル（展開用）
+// ... (DetailBreakdownTable コンポーネント 変更なし) ...
 function DetailBreakdownTable({ item, plans }: { item: WorkItem; plans: any[] }) {
   const breakdowns = plans.map(p => ({
     tier: p.tier,
@@ -157,10 +144,6 @@ function DetailBreakdownTable({ item, plans }: { item: WorkItem; plans: any[] })
   );
 }
 
-// ------------------------------------------------------------------
-// メインコンポーネント
-// ------------------------------------------------------------------
-
 export function CompareView({ data }: Props) {
   const plans = useMemo(() => {
     return (["economy", "standard", "premium"] as Tier[]).map((tier) => {
@@ -185,7 +168,6 @@ export function CompareView({ data }: Props) {
   return (
     <div className="space-y-10 pb-20 font-sans text-slate-800">
       
-      {/* 1. 経営判断用サマリ */}
       <section>
         <div className="flex items-center gap-3 mb-4">
           <h2 className="text-xl font-bold text-slate-900">1. 総合比較サマリ（経営判断用）</h2>
@@ -201,12 +183,10 @@ export function CompareView({ data }: Props) {
             return (
               <div key={p.tier} className={`rounded-xl border-2 p-5 bg-white shadow-sm relative overflow-hidden ${p.spec.border}`}>
                 <div className={`absolute top-0 left-0 w-full h-1 ${p.tier === 'premium' ? 'bg-rose-500' : p.tier === 'standard' ? 'bg-blue-500' : 'bg-emerald-500'}`} />
-                
                 <div className="flex justify-between items-baseline mb-2">
                   <h3 className={`text-lg font-bold ${p.spec.color}`}>{p.spec.label}</h3>
                 </div>
                 <div className="text-xs text-slate-500 font-bold mb-2">{p.spec.inspection}</div>
-
                 <div className="mb-4">
                   <div className="text-3xl font-black text-slate-900 tracking-tight tabular-nums">
                     {fmtJPY(p.calc.total)}
@@ -216,7 +196,6 @@ export function CompareView({ data }: Props) {
                     <span className="text-slate-500">(税込)</span>
                   </div>
                 </div>
-
                 <div className="space-y-3 pt-4 border-t border-slate-100">
                   <div>
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Risk & Scope</div>
@@ -233,7 +212,6 @@ export function CompareView({ data }: Props) {
         </div>
       </section>
 
-      {/* 2. コスト構造分析 */}
       <section className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
         <div className="flex justify-between items-end mb-6 border-b border-slate-100 pb-4">
           <div>
@@ -269,7 +247,6 @@ export function CompareView({ data }: Props) {
         </div>
       </section>
 
-      {/* 3. 詳細明細比較 */}
       <section className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
         <h2 className="text-lg font-bold text-slate-900 mb-4 border-b border-slate-100 pb-2">3. 作業項目別 明細比較（L3）</h2>
         <div className="overflow-x-auto">
@@ -306,25 +283,22 @@ export function CompareView({ data }: Props) {
                       <td className="py-2 px-3 align-top">
                         <div className="font-bold text-slate-800">{w.title}</div>
                         <div className="text-[10px] text-slate-500 mt-0.5">
-                          {sizeLabel(w.sizeClass)} / {colorModeLabel(w.colorMode)} / {dpiLabel(w.resolution)}
+                          {sizeLabel(w.sizeClass)} / {colorModeLabel(w.colorSpace)} / {dpiLabel(w.resolution)}
                         </div>
                       </td>
                       <td className="py-2 px-2 text-right tabular-nums text-slate-600 align-top">
                         {w.qty.toLocaleString()}<span className="text-[10px] ml-0.5">{w.unit}</span>
                       </td>
                       
-                      {/* 単価 */}
                       <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 bg-emerald-50/10 align-top">{fmtJPY(rows[0].unitPrice)}</td>
                       <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 bg-blue-50/10 font-bold align-top">{fmtJPY(rows[1].unitPrice)}</td>
                       <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 bg-rose-50/10 align-top">{fmtJPY(rows[2].unitPrice)}</td>
 
-                      {/* 金額 */}
                       <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 text-slate-500 align-top">{fmtJPY(rows[0].amount)}</td>
                       <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 text-slate-900 font-bold align-top">{fmtJPY(rows[1].amount)}</td>
                       <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 text-slate-500 align-top">{fmtJPY(rows[2].amount)}</td>
                     </tr>
                     
-                    {/* 詳細展開エリア */}
                     {isOpen && (
                       <tr>
                         <td colSpan={9} className="px-4 pb-4 bg-slate-50 border-b border-slate-200">

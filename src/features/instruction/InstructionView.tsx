@@ -5,10 +5,9 @@ import { SealBox } from "../../components/common/SealBox";
 
 type Props = {
   data: Data;
-  calc: any; // 指示書では計算結果（金額）は使わないが、型合わせのため維持
+  calc: any;
 };
 
-// 共通ヘッダー（社内帳票用）
 function InternalHeader({ title, data }: { title: string; data: Data }) {
   return (
     <div className="border-b-2 border-slate-800 pb-4 mb-6">
@@ -30,7 +29,6 @@ function InternalHeader({ title, data }: { title: string; data: Data }) {
   );
 }
 
-// メタ情報テーブル
 function MetaTable({ data }: { data: Data }) {
   return (
     <table className="w-full text-sm border-collapse border border-slate-400 mb-6">
@@ -66,19 +64,16 @@ export function InstructionView({ data }: Props) {
       <MetaTable data={data} />
 
       <div className="space-y-6">
-        {/* 1. 作業対象と仕様 */}
         <section>
-          <h3 className="text-sm font-bold border-l-4 border-indigo-600 pl-2 mb-2 uppercase">1. 作業対象・技術仕様（Specifications）</h3>
-          <div className="text-xs text-slate-600 mb-2">※金額情報は記載しない。現場は以下の仕様と原本条件を厳守すること。</div>
-          
+          <h3 className="text-sm font-bold border-l-4 border-indigo-600 pl-2 mb-2 uppercase">1. 作業対象・技術仕様</h3>
           <table className="w-full text-xs border-collapse border border-slate-300">
             <thead className="bg-slate-50">
               <tr>
                 <th className="border border-slate-300 p-2 w-8">No</th>
                 <th className="border border-slate-300 p-2">作業項目名称 / サービス区分</th>
                 <th className="border border-slate-300 p-2 w-24">予定数量</th>
-                <th className="border border-slate-300 p-2">スキャン仕様（解像度/色/形式）</th>
-                <th className="border border-slate-300 p-2 w-48">原本条件（取扱い注意）</th>
+                <th className="border border-slate-300 p-2">スキャン仕様</th>
+                <th className="border border-slate-300 p-2 w-48">原本条件</th>
               </tr>
             </thead>
             <tbody>
@@ -112,7 +107,6 @@ export function InstructionView({ data }: Props) {
         </section>
 
         <div className="grid grid-cols-2 gap-6">
-          {/* 2. 運用・プロセス条件 */}
           <section>
             <h3 className="text-sm font-bold border-l-4 border-indigo-600 pl-2 mb-2 uppercase">2. 運用・プロセス条件</h3>
             <table className="w-full text-xs border-collapse border border-slate-300">
@@ -141,7 +135,6 @@ export function InstructionView({ data }: Props) {
             </table>
           </section>
 
-          {/* 3. 画像処理・メタデータ */}
           <section>
             <h3 className="text-sm font-bold border-l-4 border-indigo-600 pl-2 mb-2 uppercase">3. 画像処理・メタデータ</h3>
             <table className="w-full text-xs border-collapse border border-slate-300">
@@ -174,7 +167,6 @@ export function InstructionView({ data }: Props) {
           </section>
         </div>
 
-        {/* 4. 検査・納品 */}
         <section>
           <h3 className="text-sm font-bold border-l-4 border-indigo-600 pl-2 mb-2 uppercase">4. 品質検査・納品要件</h3>
           <div className="border border-slate-300 p-3 flex gap-8 items-center text-sm">
@@ -198,7 +190,6 @@ export function InstructionView({ data }: Props) {
           </div>
         </section>
 
-        {/* 承認欄（フッター） */}
         <div className="mt-auto pt-8 border-t border-slate-400">
           <div className="flex justify-end gap-6 text-xs">
             <div className="text-center">
