@@ -1,72 +1,68 @@
-import { useMemo } from "react";
-import { Data, Tier, InspectionLevel } from "../../types/pricing";
-import { computeCalc, CalcResult, UnitPriceBreakdown, computeUnitPrice } from "../../utils/calculations";
-import { fmtJPY, inspectionLabel, tierLabel, sizeLabel, colorModeLabel, dpiLabel, formatLabel } from "../../utils/formatters";
+import { useMemo, useState } from "react";
+import { Data, Tier, InspectionLevel, WorkItem } from "../../types/pricing";
+import { computeCalc, CalcResult, computeUnitPrice, UnitPriceBreakdown } from "../../utils/calculations";
+import { fmtJPY, inspectionLabel, sizeLabel, colorModeLabel, dpiLabel, formatLabel } from "../../utils/formatters";
 import { PROJECT_FIXED_FEES, TIER_BASE_PER_UNIT, INSPECTION_MULTIPLIER } from "../../constants/coefficients";
 
 type Props = {
   data: Data;
 };
 
-// 比較用に固定する各プランの定義（経営判断用モデル）
-const PLAN_SPECS: Record<Tier, { inspection: InspectionLevel; label: string; desc: string; risk: string }> = {
+// ------------------------------------------------------------------
+// 定義・型
+// ------------------------------------------------------------------
+
+// プラン定義（経営判断用）
+const PLAN_SPECS: Record<Tier, { inspection: InspectionLevel; label: string; desc: string; risk: string; color: string; bg: string; border: string }> = {
   economy: { 
     inspection: "sample", 
     label: "エコノミー", 
-    desc: "価格優先。工程の深追いはせず、抜取検査を基本とする。",
-    risk: "工程内での手戻りや、納品後の微修正リスクを許容できる場合に推奨。"
+    desc: "価格重視。工程を簡素化し、抜取検査でコストを抑制。",
+    risk: "手戻り・納品後の微修正リスクを許容できる場合に推奨。",
+    color: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-200"
   },
   standard: { 
     inspection: "full", 
     label: "スタンダード", 
-    desc: "標準的選択。NDL準拠の標準運用を実務レベルで回す。",
-    risk: "公文書として十分な品質。文字可読性やページ順序を全数担保する。"
+    desc: "標準品質。NDL準拠の工程と全数検査で品質を担保。",
+    risk: "公文書として十分な品質。文字可読性や順序を保証する。",
+    color: "text-blue-700", bg: "bg-blue-50", border: "border-blue-200"
   },
   premium: { 
     inspection: "double_full", 
     label: "プレミアム", 
-    desc: "品質責任を強く負う前提。全数検査・二重検証を組み込む。",
-    risk: "重要文化財や機密文書向け。監査耐性と完全性を保証する。"
+    desc: "品質最優先。二重検査と厳格な管理で完全性を追求。",
+    risk: "重要文化財・機密文書向け。監査に耐えうる証跡を残す。",
+    color: "text-rose-700", bg: "bg-rose-50", border: "border-rose-200"
   },
 };
 
-// コスト構造の分解型（MECE分析用）
+// コスト構造（分析用）
 type CostStructure = {
-  fixed: number;            // F0+F1: 案件固定費
-  variableBase: number;     // L0: 基礎単価分（プラン依存の変動費）
-  variableSpecs: number;    // L1~L7: 仕様加算分（全プラン共通の変動費）
-  inspectionCost: number;   // M1: 検査による増分（品質コスト）
-  misc: number;             // 実費・付帯
+  fixed: number;            // 案件固定費
+  variableBase: number;     // 基礎単価分
+  variableSpecs: number;    // 仕様加算分
+  inspectionCost: number;   // 検査コスト
+  misc: number;             // 実費
   total: number;
 };
 
 // 分析ロジック
 function analyzeStructure(calc: CalcResult, tier: Tier, data: Data): CostStructure {
   const fixed = PROJECT_FIXED_FEES[tier].setup + PROJECT_FIXED_FEES[tier].management;
-  
   let variableBase = 0;
   let variableSpecs = 0;
   let inspectionCost = 0;
 
-  // 各行のコストを要素分解
   for (const w of data.workItems) {
     const bd = calc.unitBreakdowns[w.id];
     if (!bd) continue;
     const qty = w.qty;
-
-    // 1. 基礎コスト (L0 * 数量)
     variableBase += bd.base * qty;
-
-    // 2. 仕様加算コスト ((L1~L7) * 数量)
-    // subtotalは (L0 + L1..L7) なので、そこからL0を引く
     variableSpecs += (bd.subtotal - bd.base) * qty;
-
-    // 3. 検査コスト (最終単価 - 検査前小計) * 数量
-    // これが「検査係数による純粋な増分」
     inspectionCost += (bd.finalUnitPrice - bd.subtotal) * qty;
   }
 
-  // 実費・付帯
   const misc = calc.lineItems
     .filter(x => x.kind === "misc" || x.kind === "addon")
     .reduce((a, b) => a + b.amount, 0);
@@ -74,268 +70,299 @@ function analyzeStructure(calc: CalcResult, tier: Tier, data: Data): CostStructu
   return { fixed, variableBase, variableSpecs, inspectionCost, misc, total: calc.subtotal };
 }
 
+// ------------------------------------------------------------------
+// サブコンポーネント
+// ------------------------------------------------------------------
+
+// 1. 積み上げ棒グラフ（コスト構造）
+function CostBar({ structure, maxTotal }: { structure: CostStructure; maxTotal: number }) {
+  const getPct = (val: number) => (maxTotal > 0 ? (val / maxTotal) * 100 : 0);
+  
+  return (
+    <div className="w-full">
+      <div className="flex h-4 w-full rounded-full overflow-hidden bg-slate-100 ring-1 ring-slate-200/50">
+        <div style={{ width: `${getPct(structure.variableBase)}%` }} className="bg-blue-500" title="基礎変動費" />
+        <div style={{ width: `${getPct(structure.variableSpecs)}%` }} className="bg-cyan-400" title="仕様加算" />
+        <div style={{ width: `${getPct(structure.inspectionCost)}%` }} className="bg-rose-400" title="検査品質コスト" />
+        <div style={{ width: `${getPct(structure.fixed)}%` }} className="bg-slate-500" title="固定費" />
+        <div style={{ width: `${getPct(structure.misc)}%` }} className="bg-amber-400" title="実費" />
+      </div>
+    </div>
+  );
+}
+
+// 2. 詳細内訳テーブル（展開用）
+function DetailBreakdownTable({ item, plans }: { item: WorkItem; plans: any[] }) {
+  // 各プランの単価内訳を取得
+  const breakdowns = plans.map(p => ({
+    tier: p.tier,
+    label: p.spec.label,
+    bd: computeUnitPrice(p.tier, p.spec.inspection, item) as UnitPriceBreakdown
+  }));
+
+  return (
+    <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 mt-2 text-xs">
+      <h4 className="font-bold text-slate-700 mb-2 flex items-center gap-2">
+        <span className="text-lg">🔍</span> 単価積算ロジックの詳細比較
+      </h4>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse bg-white rounded shadow-sm">
+          <thead>
+            <tr className="bg-slate-100 text-slate-600 border-b border-slate-200">
+              <th className="p-2 w-32">費目 (コード)</th>
+              <th className="p-2">内容</th>
+              {breakdowns.map(b => (
+                <th key={b.tier} className="p-2 text-right w-24 font-bold text-slate-700">{b.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {/* L0 基礎単価 */}
+            <tr className="bg-blue-50/10">
+              <td className="p-2 font-mono text-slate-500">L0 基礎単価</td>
+              <td className="p-2 text-slate-600">プランごとの基本工程費</td>
+              {breakdowns.map(b => (
+                <td key={b.tier} className="p-2 text-right font-bold text-blue-700">{fmtJPY(b.bd.base)}</td>
+              ))}
+            </tr>
+            {/* 仕様加算 (共通) */}
+            <tr>
+              <td className="p-2 font-mono text-slate-500">L1 サイズ</td>
+              <td className="p-2 text-slate-600">{sizeLabel(item.sizeClass)}</td>
+              {breakdowns.map(b => <td key={b.tier} className="p-2 text-right text-slate-500">{fmtJPY(b.bd.size)}</td>)}
+            </tr>
+            <tr>
+              <td className="p-2 font-mono text-slate-500">L2〜L7 仕様</td>
+              <td className="p-2 text-slate-600">色・DPI・OCR・メタデータ等</td>
+              {breakdowns.map(b => (
+                <td key={b.tier} className="p-2 text-right text-slate-500">
+                  {fmtJPY(b.bd.color + b.bd.dpi + b.bd.formats + b.bd.ocr + b.bd.metadata + b.bd.handling)}
+                </td>
+              ))}
+            </tr>
+            {/* 小計 */}
+            <tr className="bg-slate-50 font-bold border-t border-slate-200">
+              <td className="p-2 text-slate-700">小計 (検査前)</td>
+              <td className="p-2 text-slate-400 text-[10px]">基礎 + 仕様加算</td>
+              {breakdowns.map(b => <td key={b.tier} className="p-2 text-right">{fmtJPY(b.bd.subtotal)}</td>)}
+            </tr>
+            {/* 検査係数 */}
+            <tr className="bg-rose-50/20">
+              <td className="p-2 font-mono text-rose-600">M1 検査係数</td>
+              <td className="p-2 text-slate-600">品質保証コスト（倍率）</td>
+              {breakdowns.map(b => (
+                <td key={b.tier} className="p-2 text-right font-bold text-rose-600">x{b.bd.inspectionMultiplier.toFixed(2)}</td>
+              ))}
+            </tr>
+            {/* 最終単価 */}
+            <tr className="bg-slate-800 text-white font-bold border-t-2 border-slate-300">
+              <td className="p-2">最終単価</td>
+              <td className="p-2 text-slate-300 text-[10px]">小計 × 係数 (端数処理)</td>
+              {breakdowns.map(b => <td key={b.tier} className="p-2 text-right text-sm">{fmtJPY(b.bd.finalUnitPrice)}</td>)}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-2 text-[10px] text-slate-500 text-right">
+        ※エコノミーと比較して、スタンダードは「基礎単価」と「検査」の両方が強化され、プレミアムはさらに「二重検査」のコストが乗ります。
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------
+// メインコンポーネント
+// ------------------------------------------------------------------
+
 export function CompareView({ data }: Props) {
-  // 3プランのシミュレーションを一括実行
+  // 3プラン計算
   const plans = useMemo(() => {
     return (["economy", "standard", "premium"] as Tier[]).map((tier) => {
       const spec = PLAN_SPECS[tier];
-      // 比較用に一時的なDataオブジェクトを生成（プランと検査レベルを強制適用）
       const simData: Data = { ...data, tier, inspectionLevel: spec.inspection };
       const calc = computeCalc(simData);
       const structure = analyzeStructure(calc, tier, simData);
-      
       return { tier, spec, calc, structure };
     });
   }, [data]);
 
   const [eco, std, pre] = plans;
-  const maxTotal = Math.max(eco.calc.total, std.calc.total, pre.calc.total);
+  const maxStructTotal = Math.max(eco.structure.total, std.structure.total, pre.structure.total);
+
+  // 展開状態の管理
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const toggleRow = (id: string) => {
+    const next = new Set(expandedRows);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setExpandedRows(next);
+  };
 
   return (
-    <div className="space-y-8 pb-20 font-sans text-slate-800">
+    <div className="space-y-10 pb-20 font-sans text-slate-800">
       
-      {/* ヘッダー */}
-      <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
-        <div className="flex justify-between items-start mb-4 border-b border-slate-100 pb-4">
-          <div>
-            <div className="inline-flex items-center gap-2 mb-2">
-              <span className="bg-yellow-400 text-black text-[10px] font-bold px-2 py-0.5 rounded">内部資料</span>
-              <span className="text-slate-500 text-xs">社外秘・意思決定用</span>
-            </div>
-            <h2 className="text-2xl font-bold text-slate-900">見積比較表（3プラン）</h2>
-            <p className="text-sm text-slate-500 mt-1">同一の作業対象（数量・仕様）に対し、プラン（管理・品質水準）を変更した場合のコスト構造比較。</p>
-          </div>
-          <div className="text-right">
-            <div className="text-xs text-slate-400">作成日</div>
-            <div className="text-sm font-mono">{data.issueDate}</div>
-          </div>
+      {/* 1. 経営判断用サマリ */}
+      <section>
+        <div className="flex items-center gap-3 mb-4">
+          <h2 className="text-xl font-bold text-slate-900">1. 総合比較サマリ（経営判断用）</h2>
+          <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs font-bold rounded border border-yellow-200">
+            社外秘
+          </span>
         </div>
-
-        {/* 1) 合計比較（エグゼクティブサマリ） */}
+        
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {plans.map((p) => {
             const isBase = p.tier === "economy";
             const diff = p.calc.total - eco.calc.total;
-            const diffPct = eco.calc.total > 0 ? (diff / eco.calc.total) * 100 : 0;
-            const color = p.tier === "premium" ? "rose" : p.tier === "standard" ? "blue" : "emerald";
-            const bg = p.tier === "premium" ? "bg-rose-50" : p.tier === "standard" ? "bg-blue-50" : "bg-emerald-50";
-            const border = p.tier === "premium" ? "border-rose-200" : p.tier === "standard" ? "border-blue-200" : "border-emerald-200";
-            const text = p.tier === "premium" ? "text-rose-700" : p.tier === "standard" ? "text-blue-700" : "text-emerald-700";
-
             return (
-              <div key={p.tier} className={`relative p-4 rounded-lg border ${border} ${bg}`}>
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className={`font-bold text-lg ${text}`}>{p.spec.label}</h3>
-                  <span className="text-xs font-medium bg-white px-2 py-1 rounded border border-slate-200 text-slate-600">
-                    {inspectionLabel(p.spec.inspection).split("（")[0]}
-                  </span>
-                </div>
-                <div className="text-3xl font-bold text-slate-900 tracking-tight tabular-nums mb-1">
-                  {fmtJPY(p.calc.total)}
-                </div>
-                <div className="text-xs font-medium flex justify-between items-center h-6">
-                  {isBase ? (
-                    <span className="text-slate-400">（比較基準）</span>
-                  ) : (
-                    <span className="text-rose-600 font-bold">
-                      +{fmtJPY(diff)} <span className="opacity-75">(+{diffPct.toFixed(1)}%)</span>
-                    </span>
-                  )}
-                  <span className="text-slate-500 text-[10px]">税込</span>
-                </div>
+              <div key={p.tier} className={`rounded-xl border-2 p-5 bg-white shadow-sm relative overflow-hidden ${p.spec.border}`}>
+                <div className={`absolute top-0 left-0 w-full h-1 ${p.tier === 'premium' ? 'bg-rose-500' : p.tier === 'standard' ? 'bg-blue-500' : 'bg-emerald-500'}`} />
                 
-                {/* 簡易コストバー */}
-                <div className="mt-4 pt-3 border-t border-slate-200/60 text-[10px] space-y-1">
-                  <div className="flex justify-between text-slate-600">
-                    <span>固定費比率</span>
-                    <span className="font-mono">{((p.structure.fixed / p.structure.total) * 100).toFixed(1)}%</span>
+                <div className="flex justify-between items-baseline mb-2">
+                  <h3 className={`text-lg font-bold ${p.spec.color}`}>{p.spec.label}</h3>
+                  <span className="text-xs font-mono text-slate-400">{inspectionLabel(p.spec.inspection).split("（")[0]}</span>
+                </div>
+
+                <div className="mb-4">
+                  <div className="text-3xl font-black text-slate-900 tracking-tight tabular-nums">
+                    {fmtJPY(p.calc.total)}
                   </div>
-                  <p className="text-slate-500 leading-tight mt-1 min-h-[3em]">{p.spec.desc}</p>
+                  <div className="text-xs font-bold mt-1 flex justify-between">
+                    <span className="text-slate-400">{isBase ? "基準プラン" : `${fmtJPY(diff)} 増`}</span>
+                    <span className="text-slate-500">(税込)</span>
+                  </div>
+                </div>
+
+                <div className="space-y-3 pt-4 border-t border-slate-100">
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Risk & Scope</div>
+                    <p className="text-xs text-slate-700 leading-relaxed font-medium">{p.spec.risk}</p>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Characteristics</div>
+                    <p className="text-xs text-slate-500 leading-relaxed">{p.spec.desc}</p>
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* 2) 価格ドライバー（パラメータ比較） */}
-        <div className="bg-white border border-slate-200 p-5 rounded-xl shadow-sm h-full">
-          <h3 className="font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100 flex items-center gap-2">
-            <span>⚙️</span> 価格ドライバー（差分の要因）
-          </h3>
-          <p className="text-xs text-slate-500 mb-4">
-            作業量（数量×仕様）以外の、プランによって変動する「単価・固定費」のパラメータ設定値。
-          </p>
-          
-          <table className="w-full text-sm text-left border-collapse">
-            <thead className="bg-slate-50 text-slate-500 text-xs">
-              <tr>
-                <th className="p-2 border border-slate-100">項目 (Code)</th>
-                <th className="p-2 border border-slate-100 w-24 text-center text-emerald-700">Eco</th>
-                <th className="p-2 border border-slate-100 w-24 text-center text-blue-700">Std</th>
-                <th className="p-2 border border-slate-100 w-24 text-center text-rose-700">Pre</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="p-2 border border-slate-100 font-medium">
-                  <div>L0 基礎単価</div>
-                  <div className="text-[10px] text-slate-400 font-normal">工程の手厚さ・基本品質</div>
-                </td>
-                <td className="p-2 border border-slate-100 text-center tabular-nums">{TIER_BASE_PER_UNIT.economy}円</td>
-                <td className="p-2 border border-slate-100 text-center tabular-nums font-bold bg-blue-50/30">{TIER_BASE_PER_UNIT.standard}円</td>
-                <td className="p-2 border border-slate-100 text-center tabular-nums bg-rose-50/30">{TIER_BASE_PER_UNIT.premium}円</td>
-              </tr>
-              <tr>
-                <td className="p-2 border border-slate-100 font-medium">
-                  <div>M1 検査倍率</div>
-                  <div className="text-[10px] text-slate-400 font-normal">全数・二重検査の人件費増</div>
-                </td>
-                <td className="p-2 border border-slate-100 text-center tabular-nums">x{INSPECTION_MULTIPLIER.sample.toFixed(2)}</td>
-                <td className="p-2 border border-slate-100 text-center tabular-nums font-bold bg-blue-50/30">x{INSPECTION_MULTIPLIER.full.toFixed(2)}</td>
-                <td className="p-2 border border-slate-100 text-center tabular-nums bg-rose-50/30">x{INSPECTION_MULTIPLIER.double_full.toFixed(2)}</td>
-              </tr>
-              <tr>
-                <td className="p-2 border border-slate-100 font-medium">
-                  <div>F0+F1 案件固定費</div>
-                  <div className="text-[10px] text-slate-400 font-normal">初期ST・進行管理・監査対応</div>
-                </td>
-                <td className="p-2 border border-slate-100 text-center tabular-nums text-xs">{fmtJPY(eco.structure.fixed)}</td>
-                <td className="p-2 border border-slate-100 text-center tabular-nums text-xs font-bold bg-blue-50/30">{fmtJPY(std.structure.fixed)}</td>
-                <td className="p-2 border border-slate-100 text-center tabular-nums text-xs bg-rose-50/30">{fmtJPY(pre.structure.fixed)}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div className="mt-4 p-3 bg-slate-50 rounded text-xs text-slate-600 leading-relaxed border border-slate-100">
-            <span className="font-bold text-slate-700">💡 読み解きのポイント</span><br/>
-            エコノミーとスタンダードの最大の差は「全数検査(M1)」と「基本工程の深さ(L0)」にあります。
-            プレミアムの上昇分は、主に「二重検証」と「管理コスト(F1)」によるもので、監査耐性を担保するためのコストです。
+      {/* 2. コスト構造分析 */}
+      <section className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+        <div className="flex justify-between items-end mb-6 border-b border-slate-100 pb-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">2. コスト構造の分解（Whyの可視化）</h2>
+            <p className="text-xs text-slate-500 mt-1">見積金額（税抜）を構成する4つの要素に分解。なぜ価格差が生まれるのかを構造的に示します。</p>
+          </div>
+          {/* 凡例 */}
+          <div className="flex gap-4 text-[10px] text-slate-600">
+            <div className="flex items-center gap-1.5"><span className="w-3 h-3 bg-blue-500 rounded-sm"/>基礎工程(L0)</div>
+            <div className="flex items-center gap-1.5"><span className="w-3 h-3 bg-cyan-400 rounded-sm"/>仕様加算(L1~)</div>
+            <div className="flex items-center gap-1.5"><span className="w-3 h-3 bg-rose-400 rounded-sm"/>品質・検査(M1)</div>
+            <div className="flex items-center gap-1.5"><span className="w-3 h-3 bg-slate-500 rounded-sm"/>固定費</div>
           </div>
         </div>
 
-        {/* 3) コスト構造分析（グラフ） */}
-        <div className="bg-white border border-slate-200 p-5 rounded-xl shadow-sm h-full">
-          <h3 className="font-bold text-slate-800 mb-4 pb-2 border-b border-slate-100 flex items-center gap-2">
-            <span>📊</span> コスト構造の分解（MECE分析）
-          </h3>
-          <p className="text-xs text-slate-500 mb-6">
-            見積総額（税抜）を「固定費」「変動費（基礎・仕様）」「品質コスト」の4要素に分解。
-          </p>
-
-          <div className="space-y-6">
-            {plans.map((p) => {
-              const total = p.structure.total; // 税抜
-              const getW = (val: number) => (total > 0 ? (val / total) * 100 : 0);
-              
-              return (
-                <div key={p.tier}>
-                  <div className="flex justify-between text-xs font-bold mb-1">
-                    <span>{p.spec.label}</span>
-                    <span className="tabular-nums">{fmtJPY(total)}</span>
-                  </div>
-                  <div className="flex h-6 w-full rounded overflow-hidden bg-slate-100">
-                    <div style={{ width: `${getW(p.structure.fixed)}%` }} className="bg-slate-500 hover:bg-slate-600 transition" title={`固定費: ${fmtJPY(p.structure.fixed)}`} />
-                    <div style={{ width: `${getW(p.structure.variableBase)}%` }} className="bg-blue-500 hover:bg-blue-600 transition" title={`変動費(基礎): ${fmtJPY(p.structure.variableBase)}`} />
-                    <div style={{ width: `${getW(p.structure.variableSpecs)}%` }} className="bg-cyan-400 hover:bg-cyan-500 transition" title={`変動費(仕様): ${fmtJPY(p.structure.variableSpecs)}`} />
-                    <div style={{ width: `${getW(p.structure.inspectionCost)}%` }} className="bg-rose-400 hover:bg-rose-500 transition" title={`品質コスト(検査): ${fmtJPY(p.structure.inspectionCost)}`} />
-                    <div style={{ width: `${getW(p.structure.misc)}%` }} className="bg-amber-400 hover:bg-amber-500 transition" title={`実費: ${fmtJPY(p.structure.misc)}`} />
-                  </div>
-                  <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-mono">
-                    <div className="flex gap-3">
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-500"></span>固定費</span>
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span>基礎</span>
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-400"></span>仕様</span>
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-400"></span>品質(検査)</span>
-                    </div>
-                  </div>
+        <div className="space-y-6">
+          {plans.map((p) => (
+            <div key={p.tier} className="grid grid-cols-12 gap-4 items-center">
+              <div className="col-span-2 text-right">
+                <div className={`font-bold text-sm ${p.spec.color}`}>{p.spec.label}</div>
+                <div className="text-[10px] text-slate-400">Total: {fmtJPY(p.structure.total)}</div>
+              </div>
+              <div className="col-span-10">
+                <CostBar structure={p.structure} maxTotal={maxStructTotal} />
+                <div className="flex justify-between mt-1 text-[10px] text-slate-400 font-mono px-1">
+                  <span>0</span>
+                  <span>{fmtJPY(p.structure.total)}</span>
                 </div>
-              );
-            })}
+              </div>
+            </div>
+          ))}
+        </div>
+        
+        <div className="mt-6 bg-slate-50 rounded p-3 text-xs text-slate-600 border border-slate-100 flex gap-4">
+          <div className="flex-1">
+            <strong>📘 基礎工程とは:</strong> プランごとに定義された標準作業（スキャン、補正、ファイル作成）。エコノミーとスタンダードの差の主因です。
+          </div>
+          <div className="flex-1">
+            <strong>📕 品質・検査とは:</strong> 検査レベル（係数）によるコスト増分。プレミアムで大幅に増えるのは「二重検査」の人件費です。
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* 4) 作業対象別の詳細比較（明細） */}
-      <div className="bg-white border border-slate-200 p-5 rounded-xl shadow-sm">
-        <h3 className="font-bold text-slate-800 mb-2 pb-2 border-b border-slate-100 text-sm">
-          4) 作業対象別の単価・金額比較
-        </h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left border-collapse">
-            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-              <tr>
-                <th className="py-2 px-3 min-w-[200px]">作業対象（仕様概要）</th>
-                <th className="py-2 px-2 text-right">数量</th>
-                <th className="py-2 px-2 text-right border-l border-white bg-emerald-50/50 text-emerald-800">Eco 単価</th>
-                <th className="py-2 px-2 text-right border-l border-white bg-blue-50/50 text-blue-800 font-bold">Std 単価</th>
-                <th className="py-2 px-2 text-right border-l border-white bg-rose-50/50 text-rose-800">Pre 単価</th>
-                <th className="py-2 px-2 text-right border-l border-white bg-emerald-50/50 text-emerald-800">Eco 金額</th>
-                <th className="py-2 px-2 text-right border-l border-white bg-blue-50/50 text-blue-800 font-bold">Std 金額</th>
-                <th className="py-2 px-2 text-right border-l border-white bg-rose-50/50 text-rose-800">Pre 金額</th>
-                <th className="py-2 px-3 text-center text-slate-400 w-32">単価差イメージ</th>
+      {/* 3. 作業明細比較（現場用） */}
+      <section className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+        <h2 className="text-lg font-bold text-slate-900 mb-1">3. 作業対象別の明細比較（現場・詳細用）</h2>
+        <p className="text-xs text-slate-500 mb-4">行をクリックすると、単価の積算ロジック詳細（L0〜L7, M1）が展開されます。</p>
+
+        <div className="overflow-x-auto border rounded-lg border-slate-200">
+          <table className="w-full text-sm text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200">
+                <th className="py-3 px-4 w-10"></th>
+                <th className="py-3 px-4 font-semibold">作業項目</th>
+                <th className="py-3 px-2 text-right w-24">数量</th>
+                <th className="py-3 px-2 text-right w-32 bg-emerald-50 text-emerald-800 border-l border-emerald-100">Eco 総額</th>
+                <th className="py-3 px-2 text-right w-32 bg-blue-50 text-blue-800 border-l border-blue-100">Std 総額</th>
+                <th className="py-3 px-2 text-right w-32 bg-rose-50 text-rose-800 border-l border-rose-100">Pre 総額</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {data.workItems.map((w) => {
-                // 行ごとの単価・金額をオンザフライ計算
-                const pEco = computeUnitPrice("economy", "sample", w);
-                const pStd = computeUnitPrice("standard", "full", w);
-                const pPre = computeUnitPrice("premium", "double_full", w);
-
-                const amtEco = pEco.finalUnitPrice * w.qty;
-                const amtStd = pStd.finalUnitPrice * w.qty;
-                const amtPre = pPre.finalUnitPrice * w.qty;
-
-                const maxPrice = Math.max(pEco.finalUnitPrice, pStd.finalUnitPrice, pPre.finalUnitPrice);
+                const isOpen = expandedRows.has(w.id);
+                // 各プランの行計算
+                const rowPlans = plans.map(p => {
+                  const bd = computeUnitPrice(p.tier, p.spec.inspection, w);
+                  return { ...p, bd, amount: bd.finalUnitPrice * w.qty };
+                });
 
                 return (
-                  <tr key={w.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="py-3 px-3 align-top">
-                      <div className="font-bold text-slate-800">{w.title}</div>
-                      <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">
-                        {sizeLabel(w.sizeClass)} / {colorModeLabel(w.colorMode)} / {dpiLabel(w.dpi)} / {w.formats.map(formatLabel).join(",")}
-                        {w.ocr && " / OCR"}
-                      </div>
-                    </td>
-                    <td className="py-3 px-2 text-right align-top tabular-nums text-slate-600">
-                      {w.qty.toLocaleString()}<span className="text-[10px] ml-0.5">{w.unit}</span>
-                    </td>
+                  <>
+                    <tr 
+                      key={w.id} 
+                      onClick={() => toggleRow(w.id)}
+                      className={`cursor-pointer transition-colors hover:bg-slate-50 ${isOpen ? "bg-slate-50" : ""}`}
+                    >
+                      <td className="py-3 px-4 text-center text-slate-400">
+                        {isOpen ? "▼" : "▶"}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-slate-800">{w.title}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">
+                          {sizeLabel(w.sizeClass)} / {colorModeLabel(w.colorMode)} / {dpiLabel(w.dpi)}
+                        </div>
+                      </td>
+                      <td className="py-3 px-2 text-right tabular-nums text-slate-700">
+                        {w.qty.toLocaleString()}<span className="text-[10px] ml-0.5 text-slate-400">{w.unit}</span>
+                      </td>
+                      <td className="py-3 px-2 text-right tabular-nums font-medium text-emerald-700 border-l border-slate-100 bg-emerald-50/30">
+                        {fmtJPY(rowPlans[0].amount)}
+                      </td>
+                      <td className="py-3 px-2 text-right tabular-nums font-bold text-blue-700 border-l border-slate-100 bg-blue-50/30">
+                        {fmtJPY(rowPlans[1].amount)}
+                      </td>
+                      <td className="py-3 px-2 text-right tabular-nums font-medium text-rose-700 border-l border-slate-100 bg-rose-50/30">
+                        {fmtJPY(rowPlans[2].amount)}
+                      </td>
+                    </tr>
                     
-                    {/* 単価 */}
-                    <td className="py-3 px-2 text-right align-top tabular-nums border-l border-slate-100 bg-emerald-50/10 font-medium">{fmtJPY(pEco.finalUnitPrice)}</td>
-                    <td className="py-3 px-2 text-right align-top tabular-nums border-l border-slate-100 bg-blue-50/10 font-bold text-blue-900">{fmtJPY(pStd.finalUnitPrice)}</td>
-                    <td className="py-3 px-2 text-right align-top tabular-nums border-l border-slate-100 bg-rose-50/10 font-medium">{fmtJPY(pPre.finalUnitPrice)}</td>
-
-                    {/* 金額 */}
-                    <td className="py-3 px-2 text-right align-top tabular-nums border-l border-slate-100 text-slate-500">{fmtJPY(amtEco)}</td>
-                    <td className="py-3 px-2 text-right align-top tabular-nums border-l border-slate-100 text-slate-900 font-semibold">{fmtJPY(amtStd)}</td>
-                    <td className="py-3 px-2 text-right align-top tabular-nums border-l border-slate-100 text-slate-500">{fmtJPY(amtPre)}</td>
-
-                    {/* グラフ */}
-                    <td className="py-3 px-3 align-middle border-l border-slate-100">
-                      <div className="flex flex-col gap-1 w-full opacity-80">
-                        <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                          <div className="h-full bg-rose-400" style={{ width: `${(pPre.finalUnitPrice / maxPrice) * 100}%` }}></div>
-                        </div>
-                        <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                          <div className="h-full bg-blue-500" style={{ width: `${(pStd.finalUnitPrice / maxPrice) * 100}%` }}></div>
-                        </div>
-                        <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                          <div className="h-full bg-emerald-500" style={{ width: `${(pEco.finalUnitPrice / maxPrice) * 100}%` }}></div>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
+                    {/* 詳細展開エリア */}
+                    {isOpen && (
+                      <tr>
+                        <td colSpan={6} className="px-4 pb-4 bg-slate-50 border-b border-slate-200">
+                          <DetailBreakdownTable item={w} plans={rowPlans} />
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 );
               })}
             </tbody>
           </table>
         </div>
-        <div className="mt-2 text-[10px] text-slate-400 text-right">
-          ※ L1〜L7（仕様加算）は全プランで同一条件。単価差はL0（基礎単価）とM1（検査倍率）のみに起因します。
-        </div>
-      </div>
+      </section>
     </div>
   );
 }
