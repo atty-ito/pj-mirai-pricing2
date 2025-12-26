@@ -99,7 +99,6 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // セッションストレージでログイン状態を維持
   useEffect(() => {
     if (sessionStorage.getItem("khq_auth") === "true") {
       setIsAuthenticated(true);
@@ -134,6 +133,9 @@ export default function App() {
     meetingMemoExists: true,
     specStandard: true,
     privacyFlag: true,
+    
+    // ★追加: 型定義にある必須プロパティ
+    notes: "",
 
     // L2: 運用・輸送
     workLocation: "社内（高セキュリティ施設）",
@@ -296,6 +298,7 @@ export default function App() {
     setData((p) => ({ ...p, workItems: p.workItems.map((w) => (w.id === id ? { ...w, ...patch } : w)) }));
   };
 
+  // 互換性維持のためのダミーハンドラ（MiscExpense用）
   const addMiscExpense = () => {}; 
   const removeMiscExpense = (id: string) => {};
   const updateMiscExpense = (id: string, patch: any) => {};
@@ -307,7 +310,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     
-    // 修正: clientName -> customerName
+    // customerNameを使用
     const safeClientName = (data.customerName || "案件データ").replace(/[\\/:*?"<>|]/g, "_");
     const fileName = `KHQ_${safeClientName}_${dateStr}.json`;
     
