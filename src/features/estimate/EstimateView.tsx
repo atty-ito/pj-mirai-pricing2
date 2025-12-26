@@ -12,18 +12,13 @@ type Props = {
 
 function DocHeader({ title, data }: { title: string; data: Data }) {
   const qno = data.quotationNo || suggestQuotationNo(data.createdDate);
-  
   return (
     <div className="mb-8 border-b-2 border-slate-800 pb-6">
       <div className="flex justify-between items-start">
         <div className="w-[55%] space-y-4">
           <div>
-            <h1 className="text-3xl font-serif font-bold text-slate-900 tracking-wider mb-4">
-              {title}
-            </h1>
-            <div className="text-lg underline decoration-slate-400 decoration-1 underline-offset-4 font-bold">
-              件名： {data.subject}
-            </div>
+            <h1 className="text-3xl font-serif font-bold text-slate-900 tracking-wider mb-4">{title}</h1>
+            <div className="text-lg underline decoration-slate-400 decoration-1 underline-offset-4 font-bold">件名： {data.subject}</div>
           </div>
           <div className="pl-2 border-l-4 border-slate-200">
             <div className="text-xl font-bold mb-1">{data.customerName} {data.jurisdiction} 御中</div>
@@ -38,9 +33,7 @@ function DocHeader({ title, data }: { title: string; data: Data }) {
           <div className="font-bold text-lg mb-1">{data.issuerOrg || ISSUER.org}</div>
           <div className="text-sm mb-3">{ISSUER.rep}</div>
           <div className="mb-2">
-            <div className="font-bold text-[9pt] border-b border-slate-300 inline-block mb-1">
-              【連絡先・送付先】 {ISSUER.dept}
-            </div>
+            <div className="font-bold text-[9pt] border-b border-slate-300 inline-block mb-1">【連絡先・送付先】 {ISSUER.dept}</div>
             <div>〒{ISSUER.zip} {ISSUER.address}</div>
             <div>TEL: {ISSUER.tel} / FAX: {ISSUER.fax}</div>
             <div>Email: {ISSUER.email}</div>
@@ -81,10 +74,9 @@ export function EstimateView({ data, calc }: Props) {
 
   return (
     <div className="space-y-8">
-      {/* 1枚目：見積書 本紙 */}
+      {/* 1枚目：本紙 */}
       <Page>
         <DocHeader title="御 見 積 書" data={data} />
-        
         <div className="mb-8 px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg">
           <div className="flex justify-between items-end border-b border-slate-800 pb-2 mb-2">
             <div className="text-sm font-bold pt-2">御見積合計金額（消費税込）</div>
@@ -151,25 +143,25 @@ export function EstimateView({ data, calc }: Props) {
         <DocFooter page={1} total={totalPages} />
       </Page>
 
-      {/* 2枚目：単価算定根拠（別紙） */}
+      {/* 2枚目：根拠説明（別紙） */}
       {data.includePriceRationalePage && (
         <Page>
           <DocHeader title="単価算定根拠（別紙）" data={data} />
           <div className="mb-6 bg-slate-50 p-4 rounded border border-slate-200">
-            <h3 className="font-bold text-slate-800 mb-2 text-sm">■ 価格算定ロジック (Cost Formula)</h3>
+            <h3 className="font-bold text-slate-800 mb-2 text-sm">■ 適正価格算定ロジック</h3>
             <p className="text-xs text-slate-600 mb-2">
-              本見積の変動費単価は、以下のロジックに基づき算出しております。
+              本見積は、国際マイクロ写真工業社標準の「高付加価値アーカイブ算定基準 (Ver.4)」に基づき、公正な積算を行っております。
             </p>
             <div className="font-mono text-center text-lg font-bold bg-white p-2 border border-slate-300 rounded mb-2">
               Unit Price = (Base × Factor) + Adders
             </div>
             <div className="grid grid-cols-2 gap-4 text-[10pt]">
               <ul className="list-disc list-inside space-y-1">
-                <li><strong>Base:</strong> プランごとの基本工程費</li>
-                <li><strong>Factor:</strong> 原本・品質・工程等の難易度係数積</li>
+                <li><strong>Base (基準単価):</strong> アーカイブ専門技術者による標準処理コスト</li>
+                <li><strong>Factor (係数):</strong> 原本状態・要求品質・特殊工程による難易度係数</li>
               </ul>
               <ul className="list-disc list-inside space-y-1">
-                <li><strong>Adders:</strong> サイズ・形式等の固定加算</li>
+                <li><strong>Adders (加算):</strong> サイズ超過・特殊形式・付帯作業の固定加算</li>
                 <li><strong>Cap:</strong> 係数上限 {data.factorCap.toFixed(1)}</li>
               </ul>
             </div>
@@ -192,11 +184,11 @@ export function EstimateView({ data, calc }: Props) {
                       <h4 className="font-bold mb-2 text-white bg-slate-600 px-2 py-1 rounded-sm">1. 仕様・条件 (Inputs)</h4>
                       <table className="w-full border-collapse border border-slate-300">
                         <tbody>
-                          <tr><th className="border p-1 bg-slate-50 text-left w-20">サービス</th><td className="border p-1">{workItem.service} (Base: {fmtJPY(bd.base)})</td></tr>
+                          <tr><th className="border p-1 bg-slate-50 text-left w-20">サービス</th><td className="border p-1">{workItem.service}</td></tr>
                           <tr><th className="border p-1 bg-slate-50 text-left">サイズ</th><td className="border p-1">{workItem.sizeClass}</td></tr>
                           <tr><th className="border p-1 bg-slate-50 text-left">解像度</th><td className="border p-1">{workItem.resolution}</td></tr>
                           <tr><th className="border p-1 bg-slate-50 text-left">色空間</th><td className="border p-1">{workItem.colorSpace}</td></tr>
-                          <tr><th className="border p-1 bg-slate-50 text-left">形式</th><td className="border p-1">{workItem.fileFormats.join(",")}</td></tr>
+                          <tr><th className="border p-1 bg-slate-50 text-left">形式</th><td className="border p-1">{[...workItem.fileFormats, workItem.fileFormatsFree].filter(Boolean).join(",")}</td></tr>
                         </tbody>
                       </table>
                     </div>

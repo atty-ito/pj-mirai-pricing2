@@ -1,7 +1,7 @@
 import { ServiceCode } from "../types/pricing";
 
 export const SYSTEM_NAME = "KHQ見積もり統合システム";
-export const APP_VERSION = "v25.5.3 (Price Rev.)";
+export const APP_VERSION = "v25.5.4 (High-Value Logic)";
 
 export const ISSUER = {
   org: "株式会社国際マイクロ写真工業社",
@@ -33,23 +33,26 @@ export const SPEC_PROFILES = [
 ] as const;
 
 // --- Ver.4 準拠：基本単価テーブル (Base) ---
-// ドキュメント記載の「本来あるべき価格」に設定
+// min: Economy (徹底削減), mid: Standard (標準), max: Premium (理想形)
 export const SERVICE_DEFINITIONS: Record<string, { name: string; unit: string; min: number; mid: number; max: number }> = {
-  A: { name: "アーカイブ撮影（標準・非接触）", unit: "cut", min: 300, mid: 325, max: 350 }, // Ver.4 p.4準拠
-  A2: { name: "アルバム特殊撮影（無反射・保護シート越し）", unit: "cut", min: 1000, mid: 1100, max: 1200 },
-  B: { name: "高速スキャン（ADF可・定型）", unit: "枚", min: 17, mid: 45, max: 65 }, // min17〜目標65
-  C: { name: "手置きスキャン（ADF不可・FB/OH）", unit: "枚", min: 60, mid: 75, max: 85 }, // Ver.4 p.3準拠
-  D: { name: "大判スキャン（図面・長尺）", unit: "枚", min: 180, mid: 205, max: 230 },
-  E: { name: "MF電子化（保存/活用）", unit: "コマ", min: 40, mid: 144, max: 200 },
-  F: { name: "写真・乾板（透過原稿）", unit: "コマ", min: 500, mid: 750, max: 1000 },
+  // アーカイブ撮影: Premiumは¥350、Economyは機材限定で¥150まで落とす
+  A: { name: "アーカイブ撮影（標準・非接触）", unit: "cut", min: 150, mid: 250, max: 350 },
+  A2: { name: "アルバム特殊撮影（無反射）", unit: "cut", min: 800, mid: 1000, max: 1200 },
+  // 高速スキャン: Premiumは丁寧な前処理込み¥65、Economyは¥17
+  B: { name: "高速スキャン（ADF可・定型）", unit: "枚", min: 17, mid: 35, max: 65 },
+  // 手置きスキャン: Premiumは¥100、Economyは¥60
+  C: { name: "手置きスキャン（ADF不可・FB/OH）", unit: "枚", min: 60, mid: 80, max: 100 },
+  D: { name: "大判スキャン（図面・長尺）", unit: "枚", min: 180, mid: 250, max: 400 },
+  E: { name: "MF電子化（保存/活用）", unit: "コマ", min: 40, mid: 88, max: 200 },
+  F: { name: "写真・乾板（透過原稿）", unit: "コマ", min: 300, mid: 500, max: 800 },
 };
 
-// --- 加算テーブル (S: Adders) ---
+// --- 加算テーブル (S) ---
 export const SIZE_ADDERS: Record<string, number> = {
   "A4以下": 0, "A4/B5": 0,
   "A3": 0,
   "B4": 50,
-  "A2": 2000, "A2以上": 2000, // Ver.4 p.3
+  "A2": 2000, "A2以上": 2000,
   "B2": 2500,
   "A1": 3000,
   "B3": 1500,
@@ -61,9 +64,9 @@ export const FORMAT_ADDERS: Record<string, number> = {
   TIFF: 0,
   PDF: 10,
   JPG: 10, JPEG: 10,
-  "PDF/A": 10,
-  "マルチPDF": 10, // 基本ルール適用前（簡易）
-  JPEG2000: 20,
+  "PDF/A": 20,
+  "マルチPDF": 20,
+  JPEG2000: 30,
   TXT: 5,
   XML: 10,
 };
@@ -72,8 +75,8 @@ export const METADATA_UNIT_PRICES = {
   none: 0,
   folder: 10,
   file_simple: 30,
-  file_full: 30,
-  special_rule: 5,
+  file_full: 50,
+  special_rule: 100,
 };
 
 export const BASE_FEE_THRESHOLDS = [
@@ -83,9 +86,9 @@ export const BASE_FEE_THRESHOLDS = [
 ];
 
 export const STANDARD_FIXED_COSTS = {
-  HDD: 20000, // Ver.4 p.14 戦略価格のベース
+  HDD: 20000,
   DVDR: 6000,
   BDR: 9000,
   LABEL: 500,
-  FUMIGATION: 20000,
+  FUMIGATION: 25000,
 };
