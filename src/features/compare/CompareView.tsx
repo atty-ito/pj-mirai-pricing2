@@ -242,7 +242,6 @@ export function CompareView({ data }: Props) {
               見積金額（税抜）を「固定費」「基礎」「仕様加算」「品質係数コスト」に分解。
             </p>
           </div>
-          {/* 凡例 */}
           <div className="flex gap-4 text-[10px] text-slate-600">
             <div className="flex items-center gap-1.5"><span className="w-3 h-3 bg-blue-500 rounded-sm"/>基礎工程(Base)</div>
             <div className="flex items-center gap-1.5"><span className="w-3 h-3 bg-cyan-400 rounded-sm"/>仕様加算(Adder)</div>
@@ -291,7 +290,6 @@ export function CompareView({ data }: Props) {
             <tbody className="divide-y divide-slate-100">
               {data.workItems.map((w) => {
                 const isOpen = expandedRows.has(w.id);
-                // 各プランの行計算
                 const rows = plans.map(p => {
                   const bd = computeUnitPrice(p.tier, p.spec.inspection, w);
                   return { unitPrice: bd.finalUnitPrice, amount: bd.finalUnitPrice * w.qty };
@@ -308,25 +306,22 @@ export function CompareView({ data }: Props) {
                       <td className="py-2 px-3 align-top">
                         <div className="font-bold text-slate-800">{w.title}</div>
                         <div className="text-[10px] text-slate-500 mt-0.5">
-                          {sizeLabel(w.sizeClass)} / {colorModeLabel(w.colorMode)} / {dpiLabel(w.resolution)}
+                          {sizeLabel(w.sizeClass)} / {colorModeLabel(w.colorSpace)} / {dpiLabel(w.resolution)}
                         </div>
                       </td>
                       <td className="py-2 px-2 text-right tabular-nums text-slate-600 align-top">
                         {w.qty.toLocaleString()}<span className="text-[10px] ml-0.5">{w.unit}</span>
                       </td>
                       
-                      {/* 単価 */}
                       <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 bg-emerald-50/10 align-top">{fmtJPY(rows[0].unitPrice)}</td>
                       <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 bg-blue-50/10 font-bold align-top">{fmtJPY(rows[1].unitPrice)}</td>
                       <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 bg-rose-50/10 align-top">{fmtJPY(rows[2].unitPrice)}</td>
 
-                      {/* 金額 */}
                       <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 text-slate-500 align-top">{fmtJPY(rows[0].amount)}</td>
                       <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 text-slate-900 font-bold align-top">{fmtJPY(rows[1].amount)}</td>
                       <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 text-slate-500 align-top">{fmtJPY(rows[2].amount)}</td>
                     </tr>
                     
-                    {/* 詳細展開エリア */}
                     {isOpen && (
                       <tr>
                         <td colSpan={9} className="px-4 pb-4 bg-slate-50 border-b border-slate-200">
