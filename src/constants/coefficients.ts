@@ -1,113 +1,68 @@
-import { Tier, SizeClass, ColorMode, Dpi, FileFormat, MetadataLevel, Handling, InspectionLevel } from "../types/pricing";
+import { ServiceCode, Tier } from "../types/pricing";
 
 // アプリケーション定数
-export const SYSTEM_NAME = "KHQ見積もり統合システム";
+export const SYSTEM_NAME = "Archive OS v24.1";
 
-// プランごとの基礎単価 (L0)
-export const TIER_BASE_PER_UNIT: Record<Tier, number> = {
-  economy: 18,
-  standard: 28,
-  premium: 42,
-};
-
-// サイズ加算 (L1)
-export const SIZE_ADDER: Record<SizeClass, number> = {
-  "A4以下": 0,
-  "A3": 4,
-  "A2": 14,
-  "A2以上": 14,
-  "A1": 30,
-  "A0": 55,
-  "図面特大": 85,
-};
-
-// 色加算 (L2)
-export const COLOR_ADDER: Record<ColorMode, number> = {
-  mono: 0,
-  gray: 3,
-  color: 10,
-};
-
-// 解像度加算 (L3)
-export const DPI_ADDER: Record<Dpi, number> = {
-  300: 0,
-  400: 3,
-  600: 8,
-};
-
-// 形式加算 (L4)
-export const FORMAT_ADDER: Partial<Record<FileFormat, number>> = {
-  PDF: 0,
-  "PDF/A": 3,
-  TIFF: 6,
-  JPEG: 2,
-  JPEG2000: 7,
-  TXT: 2,
-  XML: 5,
-};
-
-// 派生PDF生成の加算
-export const DERIVED_PDF_SURCHARGE = 20;
-export const DERIVED_PDFA_EXTRA = 3;
-
-// OCR加算 (L5)
-export const OCR_ADDER = 6;
-
-// メタデータ加算 (L6)
-export const METADATA_ADDER: Record<MetadataLevel, number> = {
-  none: 0,
-  basic: 4,
-  rich: 10,
-};
-
-// 取扱加算 (L7)
-export const HANDLING_ADDER: Record<Handling, number> = {
-  normal: 0,
-  fragile: 8,
-  bound: 6,
-  mylars: 12,
-  mixed: 10,
-};
-
-// 検査倍率 (M1)
-export const INSPECTION_MULTIPLIER: Record<InspectionLevel, number> = {
-  none: 1.0,
-  sample: 1.06,
-  full: 1.12,
-  double_full: 1.20,
-};
-
-// 案件単位の固定費 (F0, F1)
-export const PROJECT_FIXED_FEES: Record<Tier, { setup: number; management: number }> = {
-  economy: { setup: 25000, management: 30000 },
-  standard: { setup: 50000, management: 60000 },
-  premium: { setup: 90000, management: 110000 },
-};
-
-// 付帯作業の固定費 (F2〜F6)
-export const ADDON_FIXED_FEES = {
-  fumigation: 120000,
-  packing: 50000,
-  pickupDelivery: 60000,
-  onsite: 90000,
-  encryption: 40000,
-};
-
-// 発行者のデフォルト情報
+// 発行者のデフォルト情報（旧版準拠）
 export const ISSUER = {
   org: "株式会社国際マイクロ写真工業社",
-  rep: "代表取締役　森 松 義 喬",
-  hqDept: "経営管理本部",
-  hqAddress: "東京都新宿区箪笥町5（経営管理本部）",
-  opsDept: "営業部・資材販売部・オペレーションセンター",
-  opsAddress: "〒162-0833　東京都新宿区箪笥町4-3（営業部・資材販売部・オペレーションセンター）",
+  address: "東京都新宿区箪笥町43",
   tel: "03-3260-5931",
-  fax: "03-3269-4387",
-  contactPerson: "◯◯",
-  contactEmail: "e@kmsym.com",
-  bankName: "○○銀行",
-  bankBranch: "○○支店",
-  bankType: "普通",
-  bankAccount: "0000000",
-  bankAccountName: "カ）コクサイマイクロシャシンコウギョウシャ",
+  fax: "03-3260-5935",
+  cert: "JIS Q 27001 (ISMS) / プライバシーマーク取得済",
 };
+
+// サービス定義（旧版：SERVICE_BASE）
+// 各プラン（Premium/Standard/Economy）ごとの基準単価(max/mid/min)を定義
+export const SERVICE_DEFINITIONS: Record<ServiceCode, { name: string; unit: string; min: number; mid: number; max: number }> = {
+  A: { name: "アーカイブ撮影（標準・非接触）", unit: "cut", min: 300, mid: 325, max: 350 },
+  A2: { name: "アルバム特殊撮影（無反射・保護シート越し）", unit: "cut", min: 1000, mid: 1000, max: 1000 },
+  B: { name: "高速スキャン（ADF可・定型）", unit: "枚", min: 17, mid: 25.5, max: 34 },
+  C: { name: "手置きスキャン（ADF不可・FB/OH）", unit: "枚", min: 60, mid: 72.5, max: 85 },
+  D: { name: "大判スキャン（図面・長尺）", unit: "枚", min: 180, mid: 205, max: 230 },
+  E: { name: "MF電子化（保存/活用）", unit: "コマ", min: 88, mid: 144, max: 200 },
+  F: { name: "写真・乾板（透過原稿）", unit: "コマ", min: 500, mid: 750, max: 1000 },
+};
+
+// サイズ加算（旧版：SIZE_ADDERS）
+export const SIZE_ADDERS: Record<string, number> = {
+  "A4以下": 0, "A4/B5": 0, // 互換性のため両方維持
+  "A3": 0,
+  "B4": 50,
+  "A2": 2000,
+  "A2以上": 2000,
+  "B2": 2500,
+  "A1": 3000,
+  "B3": 1500,
+  "A0": 4000, "A0/長尺": 4000,
+  "図面特大": 5000,
+};
+
+// 形式加算（旧版：FORMAT_ADDERS）
+export const FORMAT_ADDERS: Record<string, number> = {
+  TIFF: 0,
+  PDF: 10,
+  JPG: 10,
+  JPEG: 10,
+  "PDF/A": 10,
+  "マルチPDF": 10,
+  JPEG2000: 20,
+  TXT: 5,
+  XML: 10,
+};
+
+// メタデータ入力単価（旧版：NAME_ENTRY_UNIT）
+export const METADATA_UNIT_PRICES = {
+  none: 0,
+  folder: 10,       // フォルダ名のみ
+  file_simple: 30,  // 背文字など
+  file_full: 30,    // 完全手入力
+  special_rule: 50, // 特殊規則
+};
+
+// 基本料金テーブル（旧版：baseFeeF）
+export const BASE_FEE_THRESHOLDS = [
+  { limit: 1000, fee: 30000 },
+  { limit: 10000, fee: 20000 },
+  { limit: Infinity, fee: 15000 },
+];

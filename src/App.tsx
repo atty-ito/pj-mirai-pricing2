@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, ChangeEvent, FormEvent } from "react";
-import { Data, ViewKey, WorkItem, MiscExpense } from "./types/pricing";
+import { Data, WorkItem, Tier, ViewKey } from "./types/pricing";
 import { computeCalc } from "./utils/calculations";
 import { suggestQuotationNo, suggestInspectionReportNo, uid } from "./utils/formatters";
 import { ISSUER, SYSTEM_NAME } from "./constants/coefficients";
@@ -9,11 +9,11 @@ import { PrintStyles } from "./components/layout/PrintStyles";
 import { InputView } from "./features/input/InputView";
 import { EstimateView } from "./features/estimate/EstimateView";
 import { InstructionView } from "./features/instruction/InstructionView";
-import { CompareView } from "./features/compare/CompareView";
-import { SpecView } from "./features/spec/SpecView";
 import { InspectionView } from "./features/inspection/InspectionView";
+import { SpecView } from "./features/spec/SpecView";
+import { CompareView } from "./features/compare/CompareView";
 
-// ---- グラフィカルなログイン画面 ----
+// ---- グラフィカルなログイン画面（維持） ----
 function LoginView({ onLogin }: { onLogin: () => void }) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
@@ -111,26 +111,88 @@ export default function App() {
     setIsAuthenticated(true);
   };
 
+  // 初期データセット（旧版の入力項目を網羅）
   const [data, setData] = useState<Data>(() => ({
+    // L1: 基本情報
+    jobNo: "25-001024",
+    createdDate: new Date().toISOString().slice(0, 10),
+    subject: "令和5年度 所蔵資料デジタル化業務委託",
+    customerName: "○○組合長",
+    customerType: "官公庁・自治体",
+    jurisdiction: "総務課 契約担当",
+    contactName: "○○ ○○",
+    contactTel: "00-0000-0000",
+    qualityManager: "高橋 幸一",
+    salesManager: "一木",
+    supervisorCert: "文書情報管理士1級",
+    
+    deadline: "2026-03-31",
+    deadlineType: "絶対納期",
+    isExpress: false,
+    expressLevel: "通常",
+    contractExists: true,
+    meetingMemoExists: true,
+    specStandard: true,
+    privacyFlag: true,
+
+    // L2: 運用・輸送
+    workLocation: "社内（高セキュリティ施設）",
+    strictCheckIn: true,
+    checkInListProvided: true,
+    transportDistanceKm: 30,
+    transportTrips: 2,
+    shippingType: "セキュリティ専用便",
+    fumigation: true,
+    tempHumidLog: true,
+    neutralPaperBag: "AFプロテクトH相当",
+    interleaving: false,
+    unbinding: "なし",
+    rebind: false,
+    preprocessMemo: "受領時に劣化・汚損の有無を確認し、必要な場合は協議の上で補修を行う。",
+
+    // L4: 画像処理・検査
+    inspectionLevel: "標準全数検査 (作業者のみ)",
+    deltaE: false,
+    reflectionSuppression: false,
+    deskew: true,
+    trimming: "あり (110%)",
+    binaryConversion: false,
+    binaryThreshold: "固定128",
+    ocr: false,
+    ocrProofread: false,
+    namingRule: "連番のみ",
+    folderStructure: "Root / 書誌ID / 分冊",
+    indexType: "索引データ（Excel）",
+    lineFeed: "LF",
+
+    // L5: 納品
+    deliveryMedia: ["HDD/SSD", "DVD-R"],
+    mediaCount: 1,
+    labelPrint: true,
+    longTermStorageMonths: 0,
+    dataDeletionProof: true,
+    disposal: "なし",
+    deliveryMemo: "納品媒体の暗号化は要望に応じて対応する。",
+
+    // 係数パラメータ
+    tier: "standard",
+    kLoadPct: 0,
+    factorCap: 2.2,
+    capExceptionApproved: false,
+
+    // 互換性維持フィールド
     quotationNo: "",
     issuerOrg: ISSUER.org,
-    issuerDept: ISSUER.hqDept,
-    issuerRep: ISSUER.rep,
-    issuerAddress: ISSUER.hqAddress,
-    issuerTel: ISSUER.tel,
-    issuerFax: ISSUER.fax,
-    issuerOpsDept: ISSUER.opsDept,
-    issuerOpsAddress: ISSUER.opsAddress,
-    issuerContactPerson: ISSUER.contactPerson,
-    issuerContactEmail: ISSUER.contactEmail,
-    issuerBankName: ISSUER.bankName,
-    issuerBankBranch: ISSUER.bankBranch,
-    issuerBankType: ISSUER.bankType,
-    issuerBankAccount: ISSUER.bankAccount,
-    issuerBankAccountName: ISSUER.bankAccountName,
+    
+    // UI制御
+    includeQuotation: true,
+    includeSpecDoc: true,
+    includeInstructionDoc: true,
+    includeInspectionDoc: true,
 
+    // 検査結果用（初期値）
     inspectionReportNo: "",
-    inspectionIssueDate: new Date().toISOString().slice(0, 10),
+    inspectionIssueDate: "",
     inspectionDate: "",
     inspectionOverall: "pass",
     inspectionDefectCount: 0,
@@ -140,123 +202,53 @@ export default function App() {
     inspectionApprover: "",
     inspectionRemarks: "",
 
-    clientName: "株式会社○○",
-    projectName: "資料デジタル化業務",
-    contactName: "ご担当者 ○○ 様",
-    issueDate: new Date().toISOString().slice(0, 10),
-    dueDate: "",
-    notes: "",
-
-    tier: "economy",
-
-    includeQuotation: true,
-    includePriceRationalePage: true,
-    includeFixedCostRationalePage: true,
-    includeParameterTables: true,
-    includeInternalCalc: true,
-    includeSpecDoc: true,
-    includeInstructionDoc: true,
-    includeInspectionDoc: true,
-
-    specProfile: "standard",
-    gunmaAllInspection: true,
-    gunmaMediaRequirements: true,
-    gunmaMetadataMandatory: true,
-
-    inspectionLevel: "sample",
-
-    includeFumigation: false,
-    includePacking: false,
-    includePickupDelivery: false,
-    includeOnsite: false,
-    includeEncryption: false,
-
-    showUnitPriceBreakdown: true,
-    includeInternalPlanDiffPage: true,
-    includeInternalPlanComparePage: true,
-
-    // 初期データ（業務項目）
     workItems: [
       {
         id: uid("w"),
-        title: "簿冊（保存用TIFF＋閲覧PDF）",
-        qty: 1200,
-        unit: "頁",
-        sizeClass: "A4以下",
-        colorMode: "color",
-        dpi: 400,
-        formats: ["TIFF", "PDF/A"],
-        ocr: false,
-        metadataLevel: "basic",
-        handling: "normal",
-        notes: "保存用（TIFF非圧縮想定）＋閲覧用（PDF/A）。ICCプロファイル埋込・チェックサム等は仕様書で規定。",
+        service: "C",
+        title: "資料の電子化（見開きA3以内）",
+        qty: 65100,
+        unit: "枚",
+        sizeClass: "A3",
+        resolution: "400dpi",
+        colorSpace: "モノクローム (TIFF/MMR)",
+        fileFormats: ["TIFF", "PDF"],
+        notes: "原寸、落丁・乱丁防止、見開き保持。",
+        fragile: true,
+        dismantleAllowed: true,
+        restorationRequired: true,
+        requiresNonContact: true,
       },
       {
         id: uid("w"),
-        title: "大型図面（A2）",
-        qty: 120,
-        unit: "点",
+        service: "D",
+        title: "図面の電子化（A2）",
+        qty: 5,
+        unit: "枚",
         sizeClass: "A2",
-        colorMode: "color",
-        dpi: 400,
-        formats: ["TIFF", "PDF"],
-        ocr: false,
-        metadataLevel: "basic",
-        handling: "fragile",
-        notes: "折り・破損リスクを前提に、取扱い加算が入る想定。",
-      },
-      {
-        id: uid("w"),
-        title: "写真・図版（高精細）",
-        qty: 300,
-        unit: "点",
-        sizeClass: "A4以下",
-        colorMode: "color",
-        dpi: 600,
-        formats: ["TIFF", "JPEG"],
-        ocr: false,
-        metadataLevel: "basic",
-        handling: "normal",
-        notes: "色管理・解像度要件を厳格化した想定（ICC／傾き・色味の補正はプレミアムに寄る）。",
-      },
-      {
-        id: uid("w"),
-        title: "閲覧用PDF（OCRあり）",
-        qty: 800,
-        unit: "頁",
-        sizeClass: "A4以下",
-        colorMode: "gray",
-        dpi: 300,
-        formats: ["PDF"],
-        ocr: true,
-        metadataLevel: "basic",
-        handling: "normal",
-        notes: "検索性の確保（OCR）を付す想定。原本の状態により精度は変動。",
+        resolution: "400dpi",
+        colorSpace: "sRGB",
+        fileFormats: ["TIFF", "JPG"],
+        notes: "折り目・反りの補正、全体図と細部の判読性確保。",
+        fragile: false,
+        dismantleAllowed: true,
+        restorationRequired: false,
+        requiresNonContact: false,
       },
     ],
-
-    // 初期データ（実費）
-    // NOTE: 型定義変更(calcType, note)に対応
-    miscExpenses: [
-      { id: uid("m"), calcType: "expense", label: "外付けHDD（実費）", qty: 1, unit: "式", unitPrice: 0, amount: 0, note: "" },
-      { id: uid("m"), calcType: "expense", label: "保存箱（実費）", qty: 1, unit: "式", unitPrice: 0, amount: 0, note: "" },
-      { id: uid("m"), calcType: "expense", label: "中性紙封筒・ラベル等（実費）", qty: 1, unit: "式", unitPrice: 0, amount: 0, note: "" },
-    ],
-
-    taxRate: 0.1,
-
-    setupFeeNote:
-      "案件要件の確認、納品フォルダ構成・命名規則の確定、帳票テンプレートの初期化、作業環境・セキュリティ設定（媒体・暗号化方針等）",
-    managementFeeNote:
-      "進行管理（工程管理・品質基準の適用・顧客窓口）、品質管理（検査計画・是正指示・再作業管理）、納品前チェック・記録の取りまとめ",
+    miscExpenses: [], // 自由入力欄（初期空）
   }));
 
   const [view, setView] = useState<ViewKey>("input");
 
+  // 見積計算（常時実行）
+  const calc = useMemo(() => computeCalc(data), [data]);
+
+  // ID採番の監視
   useEffect(() => {
     setData((prev) => {
-      const nextQuotationNo = prev.quotationNo || suggestQuotationNo(prev.issueDate);
-      const inspIssue = prev.inspectionIssueDate || prev.issueDate;
+      const nextQuotationNo = prev.quotationNo || suggestQuotationNo(prev.createdDate);
+      const inspIssue = prev.inspectionIssueDate || prev.createdDate;
       const nextInspectionNo = prev.inspectionReportNo || suggestInspectionReportNo(inspIssue);
 
       if (nextQuotationNo === prev.quotationNo && nextInspectionNo === prev.inspectionReportNo) {
@@ -268,9 +260,7 @@ export default function App() {
         inspectionReportNo: nextInspectionNo,
       };
     });
-  }, [data.issueDate, data.inspectionIssueDate]);
-
-  const calc = useMemo(() => computeCalc(data), [data]);
+  }, [data.createdDate, data.inspectionIssueDate]);
 
   // --- データ操作ハンドラ ---
   const addWorkItem = () => {
@@ -280,17 +270,19 @@ export default function App() {
         ...p.workItems,
         {
           id: uid("w"),
-          title: "（追加項目）",
+          service: "C",
+          title: "（新規）作業項目",
           qty: 0,
-          unit: "頁",
+          unit: "枚",
           sizeClass: "A4以下",
-          colorMode: "mono",
-          dpi: 300,
-          formats: ["PDF"],
-          ocr: false,
-          metadataLevel: "none",
-          handling: "normal",
+          resolution: "300dpi",
+          colorSpace: "sRGB",
+          fileFormats: ["PDF"],
           notes: "",
+          fragile: false,
+          dismantleAllowed: true,
+          restorationRequired: false,
+          requiresNonContact: false,
         },
       ],
     }));
@@ -304,35 +296,19 @@ export default function App() {
     setData((p) => ({ ...p, workItems: p.workItems.map((w) => (w.id === id ? { ...w, ...patch } : w)) }));
   };
 
-  const addMiscExpense = () => {
-    setData((p) => ({
-      ...p,
-      // NOTE: 型定義変更(calcType, note)に対応
-      miscExpenses: [...p.miscExpenses, { id: uid("m"), calcType: "manual", label: "特殊工程（自由入力）", qty: 1, unit: "式", unitPrice: 0, amount: 0, note: "" }],
-    }));
-  };
-
-  const removeMiscExpense = (id: string) => {
-    setData((p) => ({ ...p, miscExpenses: p.miscExpenses.filter((m) => m.id !== id) }));
-  };
-
-  const updateMiscExpense = (id: string, patch: Partial<MiscExpense>) => {
-    setData((p) => ({ ...p, miscExpenses: p.miscExpenses.map((m) => (m.id === id ? { ...m, ...patch } : m)) }));
-  };
+  // 互換性維持のためのダミーハンドラ（MiscExpense用）
+  const addMiscExpense = () => {}; 
+  const removeMiscExpense = (id: string) => {};
+  const updateMiscExpense = (id: string, patch: any) => {};
 
   // --- 保存・読込ハンドラ ---
-  
-  // 1. JSONエクスポート
   const handleSaveData = () => {
     const jsonString = JSON.stringify(data, null, 2);
     const blob = new Blob([jsonString], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    
-    // ファイル名生成: KHQ_顧客名_日付.json
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const safeClientName = (data.clientName || "案件データ").replace(/[\\/:*?"<>|]/g, "_");
     const fileName = `KHQ_${safeClientName}_${dateStr}.json`;
-
     const link = document.createElement("a");
     link.href = url;
     link.download = fileName;
@@ -340,32 +316,25 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  // 2. JSONインポート（ファイル選択トリガー）
   const handleClickLoad = () => {
     if (fileInputRef.current) {
-      fileInputRef.current.value = ""; // 同じファイルを再度選べるようにリセット
+      fileInputRef.current.value = "";
       fileInputRef.current.click();
     }
   };
 
-  // 3. JSONインポート（実処理）
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
         const text = ev.target?.result as string;
         const loadedData = JSON.parse(text);
-        
-        // 簡易バリデーション：必須プロパティの存在確認
-        if (!loadedData || typeof loadedData !== "object" || !Array.isArray(loadedData.workItems)) {
+        if (!loadedData || typeof loadedData !== "object") {
           alert("エラー：無効なデータ形式です。");
           return;
         }
-
-        // データの適用
         setData(loadedData as Data);
         alert("データを読み込みました。");
       } catch (err) {
@@ -376,7 +345,6 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  // 認証チェック
   if (!isAuthenticated) {
     return <LoginView onLogin={handleLogin} />;
   }
@@ -388,9 +356,7 @@ export default function App() {
         <div className="mb-8 flex items-end justify-between gap-4 no-print border-b border-slate-200 pb-4">
           <div className="flex items-center gap-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white shadow-lg shadow-indigo-200">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-7 h-7">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75a.75.75 0 0 1-.75-.75V15m.75 0H15" />
-              </svg>
+              <span className="text-xl font-black">OS</span>
             </div>
             <div>
               <h1 className="text-2xl font-black tracking-tight text-slate-900 drop-shadow-sm">{SYSTEM_NAME}</h1>
@@ -402,63 +368,30 @@ export default function App() {
           <div className="text-right text-xs text-slate-500">
             <div className="flex items-center justify-end gap-3 mb-1">
               <div className="px-3 py-1 bg-slate-100 rounded-full font-mono text-slate-600 border border-slate-200">Ver 24.10</div>
-              
-              {/* 保存ボタン */}
               <button
                 type="button"
                 onClick={handleSaveData}
-                className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-emerald-500 hover:shadow-lg active:translate-y-0.5"
-                title="現在のデータをJSONファイルとして保存"
+                className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-emerald-500"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                  <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
-                  <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
-                </svg>
                 保存
               </button>
-
-              {/* 読込ボタン */}
               <button
                 type="button"
                 onClick={handleClickLoad}
-                className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-indigo-500 hover:shadow-lg active:translate-y-0.5"
-                title="JSONファイルを読み込んでデータを復元"
+                className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-indigo-500"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                  <path d="M9.25 13.25a.75.75 0 0 0 1.5 0V4.636l2.955 3.129a.75.75 0 0 0 1.09-1.03l-4.25-4.5a.75.75 0 0 0-1.09 0l-4.25 4.5a.75.75 0 1 0 1.09 1.03l2.955-3.129v8.614Z" />
-                  <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
-                </svg>
                 読込
               </button>
-              
-              {/* ファイル選択用（非表示） */}
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileChange} 
-                className="hidden" 
-                accept=".json,application/json"
-              />
-
-              {/* 印刷ボタン */}
+              <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json,application/json" />
               <button
                 type="button"
-                className="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-slate-800 hover:shadow-lg active:translate-y-0.5"
+                className="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-slate-800"
                 onClick={() => window.print()}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                  <path fillRule="evenodd" d="M5 2.75C5 1.784 5.784 1 6.75 1h6.5c.966 0 1.75.784 1.75 1.75V3.5h3.5c.966 0 1.75.784 1.75 1.75v9.5A1.75 1.75 0 0 1 18.5 16.5H15v2.75c0 .966-.784 1.75-1.75 1.75h-6.5A1.75 1.75 0 0 1 5 19.25V16.5H1.5A1.75 1.75 0 0 1-.25 14.75v-9.5C-.25 4.284.534 3.5 1.5 3.5h3.5V2.75Zm1.5 1.5v-.75a.25.25 0 0 1 .25-.25h6.5a.25.25 0 0 1 .25.25v.75H6.5Zm-5 2h17v7.25a.25.25 0 0 1-.25.25H15v-2.25a1 1 0 0 0-1-1h-8a1 1 0 0 0-1 1v2.25H1.5a.25.25 0 0 1-.25-.25V6.25ZM6.5 16.5V19.25a.25.25 0 0 0 .25.25h6.5a.25.25 0 0 0 .25-.25V16.5H6.5Z" clipRule="evenodd" />
-                </svg>
-                印刷 / PDF保存
+                印刷
               </button>
             </div>
-            <div className="font-medium text-slate-400">現在表示中: {
-              view === "input" ? "入力画面" : 
-              view === "instruction" ? "指示書" : 
-              view === "estimate" ? "見積もり" : 
-              view === "compare" ? "プラン比較" : 
-              view === "spec" ? "仕様書" : "検査表"
-            }</div>
+            <div className="font-medium text-slate-400">View: {view}</div>
           </div>
         </div>
 
@@ -481,9 +414,10 @@ export default function App() {
             )}
             {view === "estimate" && <EstimateView data={data} calc={calc} />}
             {view === "instruction" && <InstructionView data={data} calc={calc} />}
-            {view === "compare" && <CompareView data={data} />}
-            {view === "spec" && <SpecView data={data} />}
             {view === "inspection" && <InspectionView data={data} setData={setData} />}
+            {/* 以下のビューは旧データ構造依存のため、一旦非表示または要改修 */}
+            {view === "spec" && <SpecView data={data} />}
+            {view === "compare" && <CompareView data={data} />}
           </main>
         </div>
       </div>

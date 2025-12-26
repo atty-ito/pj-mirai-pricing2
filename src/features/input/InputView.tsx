@@ -1,7 +1,7 @@
-import { Data, WorkItem, MiscExpense, Tier, InspectionLevel, SpecProfile, MetadataLevel, Handling, SizeClass, ColorMode, Dpi, FileFormat } from "../../types/pricing";
+import { Data, WorkItem, Tier, InspectionLevel, ServiceCode, ColorMode, Dpi, SizeClass } from "../../types/pricing";
 import { CalcResult } from "../../utils/calculations";
-import { TIER_BASE_PER_UNIT } from "../../constants/coefficients";
 import { fmtJPY, toInt, allocateQuotationNo, suggestQuotationNo } from "../../utils/formatters";
+import { SERVICE_DEFINITIONS, SIZE_ADDERS, RESOLUTIONS, COLOR_OPTS, ISSUER, INSPECTION_LEVELS } from "../../constants/coefficients";
 import { Card } from "../../components/common/Card";
 import { TextField } from "../../components/common/TextField";
 import { TextAreaField } from "../../components/common/TextAreaField";
@@ -18,246 +18,398 @@ type Props = {
   addWorkItem: () => void;
   removeWorkItem: (id: string) => void;
   updateWorkItem: (id: string, patch: Partial<WorkItem>) => void;
+  // MiscExpense用のハンドラは互換性維持のため残すが、今回はL3に統合されるため主要ではなくなる
   addMiscExpense: () => void;
   removeMiscExpense: (id: string) => void;
-  updateMiscExpense: (id: string, patch: Partial<MiscExpense>) => void;
+  updateMiscExpense: (id: string, patch: any) => void;
 };
 
-export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, updateWorkItem, addMiscExpense, removeMiscExpense, updateMiscExpense }: Props) {
+export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, updateWorkItem }: Props) {
+  
+  // プラン変更ハンドラ
+  const applyTier = (t: Tier) => {
+    setData((p) => {
+      const base: Partial<Data> =
+        t === 'premium'
+          ? { inspectionLevel: '二重全数検査 (有資格者による再検)', tempHumidLog: true, shippingType: 'セキュリティ専用便', kLoadPct: 0 }
+          : t === 'standard'
+          ? { inspectionLevel: '標準全数検査 (作業者のみ)', tempHumidLog: false, shippingType: '専用便', kLoadPct: 0 }
+          : { inspectionLevel: '簡易目視検査 (抜き取り)', tempHumidLog: false, shippingType: '一般宅配', kLoadPct: 0 };
+      return { ...p, tier: t, ...base };
+    });
+  };
+
   return (
-    <div className="space-y-4">
-      <Card title="1) 基本情報" tone="slate" subtitle="宛先・件名・日付など（見積／仕様／検査で共通）">
-        <div className="grid grid-cols-2 gap-3">
-          <TextField label="顧客名" value={data.clientName} onChange={(v) => setData((p) => ({ ...p, clientName: v }))} />
-          <TextField label="案件名" value={data.projectName} onChange={(v) => setData((p) => ({ ...p, projectName: v }))} />
-          <TextField label="担当者名" value={data.contactName} onChange={(v) => setData((p) => ({ ...p, contactName: v }))} />
-          <TextField label="発行日" value={data.issueDate} onChange={(v) => setData((p) => ({ ...p, issueDate: v }))} />
-          <TextField label="納期（任意）" value={data.dueDate} onChange={(v) => setData((p) => ({ ...p, dueDate: v }))} placeholder="例：2026-01-31 / 要相談" />
-        </div>
-        <div className="md:col-span-2 mt-3">
-          <TextAreaField
-            label="案件備考（社内）"
-            value={data.notes}
-            onChange={(v) => setData((p) => ({ ...p, notes: v }))}
-            placeholder="例：顧客の特記事項、品質要件の注意、追加見積の背景等"
-            rows={3}
-          />
-        </div>
-      </Card>
-
-      <Card title="1.5) 発行者・採番（見積No／検査報告No／押印欄）" tone="slate" subtitle="発行名義・連絡先（見積書ヘッダ表示）">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
-            <div className="flex items-end gap-2">
-              <div className="flex-1">
-                <TextField label="見積No" value={data.quotationNo} onChange={(v) => setData((p) => ({ ...p, quotationNo: v }))} placeholder="例：20260131-001" />
-              </div>
-              <button type="button" className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => setData((p) => ({ ...p, quotationNo: allocateQuotationNo(p.issueDate) }))}>採番</button>
-              <button type="button" className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-600 hover:bg-slate-50" onClick={() => setData((p) => ({ ...p, quotationNo: suggestQuotationNo(p.issueDate) }))}>候補に戻す</button>
+    <div className="space-y-6 pb-20">
+      
+      {/* 上部：プラン選択とサマリ */}
+      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm sticky top-0 z-10">
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-4">
+            <div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Plan</div>
+              <div className={`text-xl font-black uppercase ${
+                data.tier === 'premium' ? 'text-rose-600' : data.tier === 'standard' ? 'text-blue-600' : 'text-emerald-600'
+              }`}>{data.tier}</div>
             </div>
-            <div className="mt-1 text-xs text-slate-500">※「採番」はローカル端末で日付ごとに通番を進めます。</div>
+            <div className="h-8 w-px bg-slate-200"></div>
+            <div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total (Tax Inc.)</div>
+              <div className="text-xl font-black text-slate-900 tabular-nums">{fmtJPY(calc.total)}</div>
+            </div>
           </div>
-          <TextField label="発行者（会社名）" value={data.issuerOrg} onChange={(v) => setData((p) => ({ ...p, issuerOrg: v }))} />
-          <TextField label="本社部門" value={data.issuerDept} onChange={(v) => setData((p) => ({ ...p, issuerDept: v }))} placeholder="例：経営管理本部" />
-          <TextField label="担当者（発行者側）" value={data.issuerContactPerson} onChange={(v) => setData((p) => ({ ...p, issuerContactPerson: v }))} />
-          <TextField label="E-mail（実務連絡先）" value={data.issuerContactEmail} onChange={(v) => setData((p) => ({ ...p, issuerContactEmail: v }))} />
-          <div className="col-span-2"><TextField label="実務連絡先住所" value={data.issuerOpsAddress} onChange={(v) => setData((p) => ({ ...p, issuerOpsAddress: v }))} /></div>
+          
+          <div className="flex gap-2">
+            {(['premium', 'standard', 'economy'] as Tier[]).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => applyTier(t)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase border-2 transition-all ${
+                  data.tier === t 
+                    ? (t === 'premium' ? 'bg-rose-50 border-rose-500 text-rose-700' : t === 'standard' ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-emerald-50 border-emerald-500 text-emerald-700')
+                    : 'bg-white border-slate-100 text-slate-400 hover:border-slate-300'
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
         </div>
-      </Card>
+      </div>
 
-      <Card title="2) プランと検査" tone="amber" subtitle="単価に最も影響する選択">
-        <div className="rounded-xl border-2 border-amber-300 bg-amber-50 p-3">
-          <div className="grid grid-cols-2 gap-3">
-            <SelectField<Tier> label="プラン" value={data.tier} onChange={(v) => setData((p) => ({ ...p, tier: v }))} options={[{ value: "economy", label: "エコノミー（価格優先）" }, { value: "standard", label: "スタンダード（バランス）" }, { value: "premium", label: "プレミアム（品質・管理優先）" }]} hint="単価は「基礎単価＋加算要素」を基に算出します。" />
-            <SelectField<InspectionLevel> label="検査レベル" value={data.inspectionLevel} onChange={(v) => setData((p) => ({ ...p, inspectionLevel: v }))} options={[{ value: "none", label: "検査なし" }, { value: "sample", label: "抜取検査" }, { value: "full", label: "全数検査" }, { value: "double_full", label: "二重・全数検査" }]} hint="検査レベルは単価に倍率として反映されます。" />
-          </div>
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <Checkbox label="単価内訳（行ごと）を表示" checked={data.showUnitPriceBreakdown} onChange={(v) => setData((p) => ({ ...p, showUnitPriceBreakdown: v }))} hint="入力と同時に、参考単価と内訳を確認できます。" />
-          <div className="rounded-lg border bg-white px-3 py-2 flex flex-col justify-center">
-            <div className="text-sm font-semibold tabular-nums">{fmtJPY(TIER_BASE_PER_UNIT[data.tier])} / 頁</div>
-            <div className="text-xs text-slate-500">※ 実際の単価は加算・検査倍率を含みます。</div>
-          </div>
-        </div>
-      </Card>
-
-      <Card title="3) 仕様レベル（標準／詳細／厳格）" tone="emerald" subtitle="仕様書の分量と厳格度">
-        <div className="grid grid-cols-2 gap-3">
-          <SelectField<SpecProfile> label="仕様プロファイル" value={data.specProfile} onChange={(v) => setData((p) => ({ ...p, specProfile: v, inspectionLevel: v === "gunma" && p.inspectionLevel === "none" ? "sample" : p.inspectionLevel }))} options={[{ value: "standard", label: "標準" }, { value: "ndl", label: "詳細" }, { value: "gunma", label: "厳格" }]} hint="選択に応じて、仕様書の粒度が変化します。" />
-          <div className="rounded-lg border bg-white px-3 py-2 flex flex-col justify-center">
-             <div className="text-xs text-slate-600">現在のプロファイル</div>
-             <div className="text-sm font-semibold">{data.specProfile === "standard" ? "標準" : data.specProfile === "ndl" ? "詳細" : "厳格"}</div>
-          </div>
-        </div>
-        {data.specProfile === "gunma" && (
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-            <Checkbox label="全数検査（厳格）" checked={data.gunmaAllInspection} onChange={(v) => setData((p) => ({ ...p, gunmaAllInspection: v }))} hint="工程・出荷前を含め、全数を原則化。" />
-            <Checkbox label="媒体要件（厳格）" checked={data.gunmaMediaRequirements} onChange={(v) => setData((p) => ({ ...p, gunmaMediaRequirements: v }))} hint="媒体、チェックサム等の規格化。" />
-            <Checkbox label="メタデータ必須項目（厳格）" checked={data.gunmaMetadataMandatory} onChange={(v) => setData((p) => ({ ...p, gunmaMetadataMandatory: v }))} hint="必須欠落を不合格扱いとする運用。" />
-          </div>
-        )}
-      </Card>
-
-      <Card title="4) 付帯・出力設定" tone="indigo" subtitle="提出物の出力ページ／付帯作業のON/OFF">
-        <div className="grid grid-cols-2 gap-3">
-          <Checkbox label="顧客提出用：見積書を出力" checked={data.includeQuotation} onChange={(v) => setData((p) => ({ ...p, includeQuotation: v }))} />
-          <Checkbox label="顧客提出用：単価算定根拠（別紙）" checked={data.includePriceRationalePage} onChange={(v) => setData((p) => ({ ...p, includePriceRationalePage: v }))} />
-          <Checkbox label="顧客提出用：案件固定費の算定根拠" checked={data.includeFixedCostRationalePage} onChange={(v) => setData((p) => ({ ...p, includeFixedCostRationalePage: v }))} />
-          <Checkbox label="顧客提出用：パラメータ表（別紙）" checked={data.includeParameterTables} onChange={(v) => setData((p) => ({ ...p, includeParameterTables: v }))} />
-          <Checkbox label="内部用：計算書を出力" checked={data.includeInternalCalc} onChange={(v) => setData((p) => ({ ...p, includeInternalCalc: v }))} />
-          <Checkbox label="仕様書を出力" checked={data.includeSpecDoc} onChange={(v) => setData((p) => ({ ...p, includeSpecDoc: v }))} />
-          <Checkbox label="内部用：作業指示書を出力" checked={data.includeInstructionDoc} onChange={(v) => setData((p) => ({ ...p, includeInstructionDoc: v }))} />
-          <Checkbox label="内部用：検査表を出力" checked={data.includeInspectionDoc} onChange={(v) => setData((p) => ({ ...p, includeInspectionDoc: v }))} />
-          <Checkbox label="内部用：プラン差分説明ページ" checked={data.includeInternalPlanDiffPage} onChange={(v) => setData((p) => ({ ...p, includeInternalPlanDiffPage: v }))} />
-          <Checkbox label="内部用：3プラン比較表を出力" checked={data.includeInternalPlanComparePage} onChange={(v) => setData((p) => ({ ...p, includeInternalPlanComparePage: v }))} />
-        </div>
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 border-t pt-3">
-          <Checkbox label="燻蒸（防カビ・防虫）" checked={data.includeFumigation} onChange={(v) => setData((p) => ({ ...p, includeFumigation: v }))} />
-          <Checkbox label="長期保存資材への格納" checked={data.includePacking} onChange={(v) => setData((p) => ({ ...p, includePacking: v }))} />
-          <Checkbox label="集荷・納品" checked={data.includePickupDelivery} onChange={(v) => setData((p) => ({ ...p, includePickupDelivery: v }))} />
-          <Checkbox label="現地作業" checked={data.includeOnsite} onChange={(v) => setData((p) => ({ ...p, includeOnsite: v }))} />
-          <Checkbox label="暗号化・アクセス制御" checked={data.includeEncryption} onChange={(v) => setData((p) => ({ ...p, includeEncryption: v }))} />
-          <NumberField label="税率" value={Math.round(data.taxRate * 100)} onChange={(v) => setData((p) => ({ ...p, taxRate: v / 100 }))} suffix="%" />
-        </div>
-      </Card>
-
-      <Card title="6) 対象資料（行ごとに単価が変わる）" tone="emerald" subtitle="サイズ・形式・OCR等により単価が変動します" right={<TinyButton label="＋行を追加" onClick={addWorkItem} kind="primary" />}>
-        <div className="space-y-4">
-          {data.workItems.map((w, idx) => {
-            const bd = calc.unitBreakdowns[w.id];
-            return (
-              <div key={w.id} className="rounded-2xl border bg-white p-3 shadow-sm">
-                <div className="mb-2 flex items-center justify-between">
-                  <div className="text-sm font-semibold text-slate-800">行 {idx + 1}</div>
-                  <TinyButton label="削除" onClick={() => removeWorkItem(w.id)} kind="danger" />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <TextField label="項目名" value={w.title} onChange={(v) => updateWorkItem(w.id, { title: v })} placeholder="例：古文書／図面／帳票" />
-                  <div className="grid grid-cols-3 gap-2">
-                    <NumberField label="数量" value={w.qty} onChange={(v) => updateWorkItem(w.id, { qty: v })} />
-                    <SelectField<WorkItem["unit"]> label="単位" value={w.unit} onChange={(v) => updateWorkItem(w.id, { unit: v })} options={[{ value: "頁", label: "頁" }, { value: "点", label: "点" }, { value: "巻", label: "巻" }]} />
-                    <div className="rounded-lg border bg-slate-50 px-2 py-1 flex flex-col justify-center">
-                      <div className="text-[10px] text-slate-500">参考単価</div>
-                      <div className="text-xs font-bold tabular-nums">{fmtJPY(bd?.finalUnitPrice || 0)}</div>
-                    </div>
-                  </div>
-                  <SelectField<SizeClass> label="サイズ区分" value={w.sizeClass} onChange={(v) => updateWorkItem(w.id, { sizeClass: v })} options={["A4以下","A3","A2","A2以上","A1","A0","図面特大"].map(s=>({value:s as any, label:s}))} />
-                  <SelectField<ColorMode> label="色" value={w.colorMode} onChange={(v) => updateWorkItem(w.id, { colorMode: v })} options={[{value:"mono",label:"白黒"},{value:"gray",label:"グレー"},{value:"color",label:"カラー"}]} />
-                  <SelectField<Dpi> label="解像度（dpi）" value={w.dpi} onChange={(v) => updateWorkItem(w.id, { dpi: v })} options={[{value:300,label:"300"},{value:400,label:"400"},{value:600,label:"600"}]} />
-                  <SelectField<Handling> label="取扱区分" value={w.handling} onChange={(v) => updateWorkItem(w.id, { handling: v })} options={[{value:"normal",label:"通常"},{value:"fragile",label:"脆弱"},{value:"bound",label:"製本"},{value:"mylars",label:"マイラー"},{value:"mixed",label:"混在"}]} />
-                  <div className="md:col-span-2">
-                    <Label>出力形式（複数選択可）</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {(["PDF", "PDF/A", "TIFF", "JPEG", "JPEG2000", "TXT", "XML"] as FileFormat[]).map(f => (
-                        <label key={f} className="flex items-center gap-1 text-xs border rounded-full px-2 py-0.5 bg-slate-50 cursor-pointer hover:bg-slate-100">
-                          <input type="checkbox" checked={w.formats.includes(f)} onChange={e => {
-                            const next = e.target.checked ? [...w.formats, f] : w.formats.filter(x => x !== f);
-                            updateWorkItem(w.id, { formats: next as any });
-                          }} /> {f}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="md:col-span-2 grid grid-cols-2 gap-3">
-                    <Checkbox label="OCR（文字認識）" checked={w.ocr} onChange={(v) => updateWorkItem(w.id, { ocr: v })} />
-                    <SelectField<MetadataLevel> label="メタデータ" value={w.metadataLevel} onChange={(v) => updateWorkItem(w.id, { metadataLevel: v })} options={[{value:"none",label:"なし"},{value:"basic",label:"基本"},{value:"rich",label:"充実"}]} />
-                  </div>
-                  <div className="md:col-span-2">
-                    <TextAreaField label="備考（案件個別）" value={w.notes ?? ""} onChange={(v) => updateWorkItem(w.id, { notes: v })} placeholder="例：禁裁断、欠損あり等" rows={2} />
-                  </div>
-                  {data.showUnitPriceBreakdown && bd && (
-                    <div className="md:col-span-2 p-2 bg-slate-50 rounded text-[10px] grid grid-cols-4 gap-x-2 text-slate-500 border border-slate-200">
-                      <div>基礎: {fmtJPY(bd.base)}</div>
-                      <div>サイズ: +{fmtJPY(bd.size)}</div>
-                      <div>色: +{fmtJPY(bd.color)}</div>
-                      <div>dpi: +{fmtJPY(bd.dpi)}</div>
-                      <div>形式: +{fmtJPY(bd.formats)}</div>
-                      <div>OCR: +{fmtJPY(bd.ocr)}</div>
-                      <div>メタ: +{fmtJPY(bd.metadata)}</div>
-                      <div>取扱: +{fmtJPY(bd.handling)}</div>
-                      <div className="col-span-4 font-bold text-slate-800 border-t mt-1 pt-1">最終単価(検査倍率×{bd.inspectionMultiplier.toFixed(2)}込): {fmtJPY(bd.finalUnitPrice)}</div>
-                    </div>
-                  )}
-                </div>
+      {/* L1: 導入・設計 / 基本情報 */}
+      <Card title="L1 基本情報・要件定義" tone="indigo" subtitle="Job No、顧客情報、管理者、納期">
+        <div className="grid grid-cols-12 gap-4">
+          <div className="col-span-3">
+            <div className="flex items-end gap-1">
+              <div className="flex-1">
+                <TextField label="Job No" value={data.jobNo} onChange={(v) => setData(p => ({...p, jobNo: v}))} />
               </div>
-            );
-          })}
+              {/* 採番機能の互換性維持 */}
+              <button type="button" onClick={() => setData(p => ({...p, jobNo: allocateQuotationNo(p.createdDate)}))} className="mb-1 p-1 text-slate-400 hover:text-indigo-600" title="採番">#</button>
+            </div>
+          </div>
+          <div className="col-span-3">
+            <TextField label="発行日" value={data.createdDate} onChange={(v) => setData(p => ({...p, createdDate: v}))} placeholder="YYYY-MM-DD" />
+          </div>
+          <div className="col-span-6">
+            <TextField label="件名" value={data.subject} onChange={(v) => setData(p => ({...p, subject: v}))} />
+          </div>
+
+          <div className="col-span-4">
+            <TextField label="顧客名" value={data.customerName} onChange={(v) => setData(p => ({...p, customerName: v}))} />
+          </div>
+          <div className="col-span-4">
+            <TextField label="主管課・部署" value={data.jurisdiction} onChange={(v) => setData(p => ({...p, jurisdiction: v}))} />
+          </div>
+          <div className="col-span-4">
+            <SelectField label="顧客種別" value={data.customerType} onChange={(v) => setData(p => ({...p, customerType: v}))} options={["官公庁・自治体", "民間企業", "大学・研究機関", "その他"].map(s => ({value:s, label:s}))} />
+          </div>
+
+          <div className="col-span-3">
+            <TextField label="担当者名" value={data.contactName} onChange={(v) => setData(p => ({...p, contactName: v}))} />
+          </div>
+          <div className="col-span-3">
+            <TextField label="電話番号" value={data.contactTel} onChange={(v) => setData(p => ({...p, contactTel: v}))} />
+          </div>
+          <div className="col-span-3">
+            <TextField label="品質責任者" value={data.qualityManager} onChange={(v) => setData(p => ({...p, qualityManager: v}))} />
+          </div>
+          <div className="col-span-3">
+            <TextField label="監督者資格" value={data.supervisorCert} onChange={(v) => setData(p => ({...p, supervisorCert: v}))} placeholder="例: 文書情報管理士1級" />
+          </div>
+
+          {/* 納期・特急 */}
+          <div className="col-span-12 mt-2 pt-4 border-t border-indigo-100 grid grid-cols-12 gap-4 bg-indigo-50/50 p-3 rounded-lg">
+            <div className="col-span-3">
+              <TextField label="納期" value={data.deadline} onChange={(v) => setData(p => ({...p, deadline: v}))} placeholder="YYYY-MM-DD" />
+            </div>
+            <div className="col-span-3">
+              <SelectField label="納期種別" value={data.deadlineType} onChange={(v) => setData(p => ({...p, deadlineType: v as any}))} options={[{value:"絶対納期",label:"絶対納期"},{value:"目標納期",label:"目標納期"}]} />
+            </div>
+            <div className="col-span-2">
+              <div className="mt-6">
+                <Checkbox label="特急対応" checked={data.isExpress} onChange={(v) => setData(p => ({...p, isExpress: v}))} />
+              </div>
+            </div>
+            <div className="col-span-4">
+              <SelectField 
+                label="特急レベル" 
+                value={data.expressLevel} 
+                onChange={(v) => setData(p => ({...p, expressLevel: v as any}))} 
+                options={["通常", "特急(10営未満)", "超特急(5営未満)"].map(s => ({value:s, label:s}))} 
+              />
+            </div>
+          </div>
+
+          <div className="col-span-12 flex gap-4 mt-2">
+            <Checkbox label="仕様書（公的規格準拠）" checked={data.specStandard} onChange={(v) => setData(p => ({...p, specStandard: v}))} />
+            <Checkbox label="個人情報あり" checked={data.privacyFlag} onChange={(v) => setData(p => ({...p, privacyFlag: v}))} />
+            <Checkbox label="契約書受領済" checked={data.contractExists} onChange={(v) => setData(p => ({...p, contractExists: v}))} />
+            <Checkbox label="打合記録あり" checked={data.meetingMemoExists} onChange={(v) => setData(p => ({...p, meetingMemoExists: v}))} />
+          </div>
         </div>
       </Card>
 
-      <Card title="7) 特殊工程・実費" tone="rose" subtitle="大型図面・前処理・媒体実費など" right={<TinyButton label="＋追加" onClick={addMiscExpense} kind="primary" />}>
-        <div className="space-y-4">
-          {data.miscExpenses.map((m) => {
-            const isExpense = m.calcType === "expense";
-            const estPrice = isExpense ? Math.round((m.unitPrice || 0) * 1.3) : (m.unitPrice || 0);
-            
+      {/* L2: 運用条件・輸送 */}
+      <Card title="L2 運用・輸送条件" tone="slate" subtitle="作業場所、セキュリティ、搬送コスト計算">
+        <div className="grid grid-cols-12 gap-4">
+          <div className="col-span-6">
+            <SelectField 
+              label="作業場所" 
+              value={data.workLocation} 
+              onChange={(v) => setData(p => ({...p, workLocation: v as any}))} 
+              options={["社内（高セキュリティ施設）", "現地（出張）", "外部委託（要承認）"].map(s => ({value:s, label:s}))} 
+            />
+          </div>
+          <div className="col-span-6 grid grid-cols-2 gap-4 pt-6">
+            <Checkbox label="厳格照合（リスト突合）" checked={data.strictCheckIn} onChange={(v) => setData(p => ({...p, strictCheckIn: v}))} />
+            <Checkbox label="顧客リスト提供あり" checked={data.checkInListProvided} onChange={(v) => setData(p => ({...p, checkInListProvided: v}))} />
+          </div>
+
+          <div className="col-span-12 mt-2 pt-4 border-t border-slate-200 grid grid-cols-12 gap-4">
+            <div className="col-span-4">
+              <SelectField 
+                label="輸送形態" 
+                value={data.shippingType} 
+                onChange={(v) => setData(p => ({...p, shippingType: v as any}))} 
+                options={["一般宅配", "専用便", "セキュリティ専用便", "特殊セキュリティカー"].map(s => ({value:s, label:s}))} 
+              />
+            </div>
+            <div className="col-span-4">
+              <NumberField label="片道距離(km)" value={data.transportDistanceKm} onChange={(v) => setData(p => ({...p, transportDistanceKm: v}))} suffix="km" />
+            </div>
+            <div className="col-span-4">
+              <NumberField label="往復回数" value={data.transportTrips} onChange={(v) => setData(p => ({...p, transportTrips: Math.max(1, v)}))} suffix="回" />
+            </div>
+          </div>
+
+          <div className="col-span-12 mt-2 flex flex-wrap gap-4 pt-4 border-t border-slate-200 bg-slate-50 p-3 rounded">
+            <Checkbox label="燻蒸処理" checked={data.fumigation} onChange={(v) => setData(p => ({...p, fumigation: v}))} />
+            <Checkbox label="温湿度ログ提出" checked={data.tempHumidLog} onChange={(v) => setData(p => ({...p, tempHumidLog: v}))} />
+            <Checkbox label="合紙（前処理）" checked={data.interleaving} onChange={(v) => setData(p => ({...p, interleaving: v}))} />
+            <Checkbox label="再製本（復元）" checked={data.rebind} onChange={(v) => setData(p => ({...p, rebind: v}))} />
+          </div>
+          
+          <div className="col-span-6">
+            <SelectField 
+              label="解体処理" 
+              value={data.unbinding} 
+              onChange={(v) => setData(p => ({...p, unbinding: v as any}))} 
+              options={["なし", "紐外し", "和綴じ解体", "ハードカバー解体"].map(s => ({value:s, label:s}))} 
+            />
+          </div>
+          <div className="col-span-6">
+            <TextField label="中性紙袋・保護材" value={data.neutralPaperBag} onChange={(v) => setData(p => ({...p, neutralPaperBag: v}))} />
+          </div>
+        </div>
+      </Card>
+
+      {/* L3: 業務内訳（WorkItems） - ここが最も重要 */}
+      <Card title="L3 業務内訳（明細行）" tone="emerald" subtitle="“一式”禁止。工程ごとに行を分けて登録。" right={<TinyButton label="＋行を追加" onClick={addWorkItem} kind="primary" />}>
+        <div className="space-y-6">
+          {data.workItems.map((w, idx) => {
+            const bd = calc.unitBreakdowns[w.id]; // 計算結果を参照
             return (
-              <div key={m.id} className="rounded-xl border border-rose-100 bg-rose-50/50 p-3">
-                <div className="grid grid-cols-12 gap-3 items-start">
-                  <div className="col-span-12 md:col-span-3">
-                    <SelectField<MiscExpense["calcType"]>
-                      label="種別"
-                      value={m.calcType || "manual"}
-                      onChange={(v) => updateMiscExpense(m.id, { calcType: v })}
-                      options={[
-                        { value: "manual", label: "特殊工程 (手入力)" },
-                        { value: "expense", label: "実費購入 (+30%)" },
-                      ]}
+              <div key={w.id} className="rounded-xl border-2 border-emerald-100 bg-white p-4 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+                <div className="flex justify-between items-start mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-1 rounded">No.{idx + 1}</span>
+                    <div className="w-64">
+                      <SelectField 
+                        label="" 
+                        value={w.service} 
+                        onChange={(v) => updateWorkItem(w.id, { service: v as any })} 
+                        options={(Object.keys(SERVICE_DEFINITIONS) as ServiceCode[]).map(k => ({ value: k, label: `${k}: ${SERVICE_DEFINITIONS[k].name}` }))} 
+                      />
+                    </div>
+                  </div>
+                  <TinyButton label="削除" kind="danger" onClick={() => removeWorkItem(w.id)} />
+                </div>
+
+                <div className="grid grid-cols-12 gap-4">
+                  <div className="col-span-6">
+                    <TextField label="項目名（明細表示用）" value={w.title} onChange={(v) => updateWorkItem(w.id, { title: v })} placeholder="例: 〇〇資料 電子化" />
+                  </div>
+                  <div className="col-span-3">
+                    <NumberField label="数量" value={w.qty} onChange={(v) => updateWorkItem(w.id, { qty: v })} />
+                  </div>
+                  <div className="col-span-3">
+                    <TextField label="単位" value={w.unit} onChange={(v) => updateWorkItem(w.id, { unit: v })} />
+                  </div>
+
+                  <div className="col-span-3">
+                    <SelectField label="サイズ" value={w.sizeClass} onChange={(v) => updateWorkItem(w.id, { sizeClass: v as any })} options={Object.keys(SIZE_ADDERS).map(k => ({value:k, label: `${k} (+${fmtJPY(SIZE_ADDERS[k])})`}))} />
+                  </div>
+                  <div className="col-span-3">
+                    <SelectField label="解像度" value={w.resolution} onChange={(v) => updateWorkItem(w.id, { resolution: v as any })} options={RESOLUTIONS.map(r => ({value:r, label:r}))} />
+                  </div>
+                  <div className="col-span-3">
+                    <SelectField label="色空間" value={w.colorSpace} onChange={(v) => updateWorkItem(w.id, { colorSpace: v as any })} options={COLOR_OPTS.map(c => ({value:c, label:c}))} />
+                  </div>
+                  <div className="col-span-3">
+                    <TextField 
+                      label="形式 (カンマ区切り)" 
+                      value={w.fileFormats.join(",")} 
+                      onChange={(v) => updateWorkItem(w.id, { fileFormats: v.split(",").map(s=>s.trim()).filter(Boolean) })} 
+                      placeholder="TIFF, PDF" 
                     />
                   </div>
-                  <div className="col-span-12 md:col-span-9 grid grid-cols-12 gap-2">
-                    <div className="col-span-12 md:col-span-5">
-                      <TextField label="項目名" value={m.label} onChange={(v) => updateMiscExpense(m.id, { label: v })} placeholder="例：大型図面補正 / 外付けHDD" />
-                    </div>
-                    <div className="col-span-4 md:col-span-2">
-                      <NumberField label="数量" value={m.qty || 1} onChange={(v) => updateMiscExpense(m.id, { qty: v })} />
-                    </div>
-                    <div className="col-span-4 md:col-span-2">
-                      <TextField label="単位" value={m.unit || "式"} onChange={(v) => updateMiscExpense(m.id, { unit: v })} />
-                    </div>
-                    <div className="col-span-4 md:col-span-3">
-                      <NumberField 
-                        label={isExpense ? "市場価格(税込)" : "単価(税抜)"} 
-                        value={m.unitPrice || 0} 
-                        onChange={(v) => updateMiscExpense(m.id, { unitPrice: v, amount: (m.qty || 1) * v })} 
-                      />
-                      {isExpense && (
-                        <div className="text-[10px] text-rose-600 text-right mt-0.5">
-                          見積提示額: {fmtJPY(estPrice)}
-                        </div>
-                      )}
-                    </div>
+
+                  <div className="col-span-12 bg-slate-50 p-3 rounded border border-slate-200 grid grid-cols-4 gap-2">
+                    <Checkbox label="脆弱資料 (C)" checked={w.fragile} onChange={(v) => updateWorkItem(w.id, { fragile: v })} hint="係数C加算" />
+                    <Checkbox label="解体可能" checked={w.dismantleAllowed} onChange={(v) => updateWorkItem(w.id, { dismantleAllowed: v })} hint="不可時係数増" />
+                    <Checkbox label="復元必須" checked={w.restorationRequired} onChange={(v) => updateWorkItem(w.id, { restorationRequired: v })} hint="係数C加算" />
+                    <Checkbox label="非接触必須" checked={w.requiresNonContact} onChange={(v) => updateWorkItem(w.id, { requiresNonContact: v })} hint="係数C加算" />
                   </div>
-                  
-                  {/* 2行目：備考と削除ボタン */}
-                  <div className="col-span-12 flex gap-3 items-start">
-                    <div className="flex-1">
-                      <TextField 
-                        label="工程説明・備考（見積書に記載）" 
-                        value={m.note || ""} 
-                        onChange={(v) => updateMiscExpense(m.id, { note: v })} 
-                        placeholder={isExpense ? "例：メーカー・型番・容量等" : "例：作業の詳細手順や前提条件など"}
-                      />
-                    </div>
-                    <div className="pt-6">
-                      <TinyButton label="削除" kind="danger" onClick={() => removeMiscExpense(m.id)} />
-                    </div>
+
+                  <div className="col-span-12">
+                    <TextField label="備考（仕様詳細）" value={w.notes} onChange={(v) => updateWorkItem(w.id, { notes: v })} />
                   </div>
                 </div>
+
+                {/* 計算結果プレビュー（行） */}
+                {bd && (
+                  <div className="mt-3 pt-2 border-t border-emerald-100 text-xs text-slate-500 flex justify-between items-center bg-emerald-50/30 p-2 rounded">
+                    <div>
+                      基礎単価: <span className="font-mono">{bd.base}</span> × 
+                      係数: <span className="font-mono font-bold text-emerald-700">{bd.factors.capped.toFixed(2)}</span> 
+                      (C:{bd.factors.c.toFixed(2)} Q:{bd.factors.q.toFixed(2)} P:{bd.factors.p.toFixed(2)} I:{bd.factors.i.toFixed(2)} K:{bd.factors.k.toFixed(2)})
+                      + 加算: <span className="font-mono">{bd.sizeAdder + bd.formatAdder}</span>
+                    </div>
+                    <div className="text-right">
+                      単価: <span className="font-bold text-lg tabular-nums text-slate-800">{fmtJPY(bd.unitPrice)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
-          {data.miscExpenses.length === 0 && (
-            <div className="text-sm text-slate-400 text-center py-4">項目がありません。「＋追加」ボタンで追加してください。</div>
-          )}
+          {data.workItems.length === 0 && <div className="text-center py-8 text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">作業項目がありません。「＋行を追加」してください。</div>}
         </div>
       </Card>
 
-      <div className="grid grid-cols-3 gap-3 p-4 bg-slate-900 rounded-2xl text-white">
-        <div><div className="text-[10px] opacity-70 uppercase font-bold tracking-wider">小計(税抜)</div><div className="text-lg font-bold tabular-nums">{fmtJPY(calc.subtotal)}</div></div>
-        <div><div className="text-[10px] opacity-70 uppercase font-bold tracking-wider">消費税</div><div className="text-lg font-bold tabular-nums">{fmtJPY(calc.tax)}</div></div>
-        <div className="text-right"><div className="text-[10px] opacity-70 uppercase font-bold tracking-wider">合計(税込)</div><div className="text-2xl font-black tabular-nums">{fmtJPY(calc.total)}</div></div>
-      </div>
+      {/* L4: 画像処理・メタデータ・検査 */}
+      <Card title="L4 画像処理・検査・係数パラメータ" tone="amber" subtitle="Q(Quality) / P(Process) / K(K_load) に関わる設定">
+        <div className="grid grid-cols-12 gap-4">
+          <div className="col-span-6">
+            <SelectField label="検査深度 (Q)" value={data.inspectionLevel} onChange={(v) => setData(p => ({...p, inspectionLevel: v as any}))} options={INSPECTION_LEVELS.map(l => ({value:l, label:l}))} />
+          </div>
+          <div className="col-span-6 grid grid-cols-2 gap-4 pt-6">
+            <Checkbox label="ΔE保証 (Q)" checked={data.deltaE} onChange={(v) => setData(p => ({...p, deltaE: v}))} />
+            <Checkbox label="反射抑制" checked={data.reflectionSuppression} onChange={(v) => setData(p => ({...p, reflectionSuppression: v}))} />
+          </div>
+
+          <div className="col-span-12 border-t border-amber-100 my-2"></div>
+
+          <div className="col-span-4">
+            <SelectField 
+              label="命名規則 (P)" 
+              value={data.namingRule} 
+              onChange={(v) => setData(p => ({...p, namingRule: v as any}))} 
+              options={["連番のみ", "フォルダ名のみ", "ファイル名（背文字）", "ファイル名（完全手入力）", "特殊命名規則"].map(s => ({value:s, label:s}))} 
+            />
+          </div>
+          <div className="col-span-4">
+            <TextField label="フォルダ構造" value={data.folderStructure} onChange={(v) => setData(p => ({...p, folderStructure: v}))} />
+          </div>
+          <div className="col-span-4">
+            <SelectField 
+              label="索引データ" 
+              value={data.indexType} 
+              onChange={(v) => setData(p => ({...p, indexType: v as any}))} 
+              options={["なし", "索引データ（Excel）", "TSV（UTF-8 BOMなし）"].map(s => ({value:s, label:s}))} 
+            />
+          </div>
+
+          <div className="col-span-12 grid grid-cols-4 gap-4 bg-amber-50 p-3 rounded">
+            <Checkbox label="傾き補正" checked={data.deskew} onChange={(v) => setData(p => ({...p, deskew: v}))} />
+            <Checkbox label="トリミング" checked={!!data.trimming} onChange={(e) => {/* UI簡略化のためcheckboxのみ */}} hint="※内容は詳細入力へ" />
+            <Checkbox label="2値化処理" checked={data.binaryConversion} onChange={(v) => setData(p => ({...p, binaryConversion: v}))} />
+            {data.binaryConversion && <TextField label="2値化閾値" value={data.binaryThreshold} onChange={(v) => setData(p => ({...p, binaryThreshold: v}))} />}
+          </div>
+
+          <div className="col-span-12 grid grid-cols-4 gap-4 bg-amber-50 p-3 rounded mt-2">
+            <Checkbox label="OCR処理 (P)" checked={data.ocr} onChange={(v) => setData(p => ({...p, ocr: v}))} />
+            <Checkbox label="OCR校正 (P+)" checked={data.ocrProofread} onChange={(v) => setData(p => ({...p, ocrProofread: v}))} />
+          </div>
+
+          <div className="col-span-12 border-t border-amber-100 my-2 pt-2">
+            <div className="grid grid-cols-2 gap-6">
+              <div className="bg-slate-100 p-3 rounded">
+                <NumberField 
+                  label="繁忙期・負荷調整 (K_load)" 
+                  value={data.kLoadPct} 
+                  onChange={(v) => setData(p => ({...p, kLoadPct: Math.max(0, Math.min(20, v))}))} 
+                  suffix="%" 
+                />
+                <div className="text-[10px] text-slate-500 mt-1">※ 特急対応や繁忙期割り増しとして係数に乗算 (例: 10% → ×1.1)</div>
+              </div>
+              <div className="bg-rose-50 p-3 rounded border border-rose-200">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs font-bold text-rose-800">係数上限 (Ceiling)</span>
+                  <span className="text-lg font-black text-rose-600">x{data.capExceptionApproved ? "2.5" : "2.2"}</span>
+                </div>
+                <Checkbox 
+                  label="例外上限（×2.5）を適用する" 
+                  checked={data.capExceptionApproved} 
+                  onChange={(v) => setData(p => ({...p, capExceptionApproved: v, factorCap: v ? 2.5 : 2.2}))} 
+                  hint="※要承認事項"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* L5: 納品・媒体 */}
+      <Card title="L5 納品・保管・消去" tone="slate" subtitle="成果物の納品形態とアフターフォロー">
+        <div className="grid grid-cols-12 gap-4">
+          <div className="col-span-12">
+            <Label>納品媒体</Label>
+            <div className="flex gap-4 mt-1">
+              {["HDD/SSD", "DVD-R", "BD-R", "クラウド"].map(m => (
+                <label key={m} className="flex items-center gap-2 cursor-pointer border px-3 py-2 rounded hover:bg-slate-50">
+                  <input 
+                    type="checkbox" 
+                    checked={data.deliveryMedia.includes(m)} 
+                    onChange={e => {
+                      const next = e.target.checked ? [...data.deliveryMedia, m] : data.deliveryMedia.filter(x => x !== m);
+                      setData(p => ({...p, deliveryMedia: next}));
+                    }}
+                  />
+                  <span className="text-sm">{m}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="col-span-3">
+            <NumberField label="媒体セット数" value={data.mediaCount} onChange={(v) => setData(p => ({...p, mediaCount: Math.max(1, v)}))} />
+          </div>
+          <div className="col-span-3">
+            <Checkbox label="レーベル印字" checked={data.labelPrint} onChange={(v) => setData(p => ({...p, labelPrint: v}))} />
+          </div>
+          <div className="col-span-3">
+            <NumberField label="データ保管(月)" value={data.longTermStorageMonths} onChange={(v) => setData(p => ({...p, longTermStorageMonths: v}))} suffix="ヶ月" />
+          </div>
+          
+          <div className="col-span-12 border-t border-slate-100 pt-2 grid grid-cols-2 gap-4">
+            <Checkbox label="データ消去証明書の発行" checked={data.dataDeletionProof} onChange={(v) => setData(p => ({...p, dataDeletionProof: v}))} />
+            <SelectField 
+              label="原本/媒体廃棄" 
+              value={data.disposal} 
+              onChange={(v) => setData(p => ({...p, disposal: v as any}))} 
+              options={["なし", "溶解処理", "返却のみ"].map(s => ({value:s, label:s}))} 
+            />
+          </div>
+          <div className="col-span-12">
+            <TextField label="納品備考" value={data.deliveryMemo} onChange={(v) => setData(p => ({...p, deliveryMemo: v}))} />
+          </div>
+        </div>
+      </Card>
+
     </div>
   );
 }
