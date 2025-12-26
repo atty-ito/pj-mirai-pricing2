@@ -13,7 +13,7 @@ import { InspectionView } from "./features/inspection/InspectionView";
 import { SpecView } from "./features/spec/SpecView";
 import { CompareView } from "./features/compare/CompareView";
 
-// ---- グラフィカルなログイン画面（維持） ----
+// ---- グラフィカルなログイン画面 ----
 function LoginView({ onLogin }: { onLogin: () => void }) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
@@ -111,7 +111,7 @@ export default function App() {
     setIsAuthenticated(true);
   };
 
-  // 初期データセット（旧版の入力項目を網羅）
+  // 初期データセット
   const [data, setData] = useState<Data>(() => ({
     // L1: 基本情報
     jobNo: "25-001024",
@@ -190,7 +190,7 @@ export default function App() {
     includeInstructionDoc: true,
     includeInspectionDoc: true,
 
-    // 検査結果用（初期値）
+    // 検査結果用
     inspectionReportNo: "",
     inspectionIssueDate: "",
     inspectionDate: "",
@@ -236,7 +236,7 @@ export default function App() {
         requiresNonContact: false,
       },
     ],
-    miscExpenses: [], // 自由入力欄（初期空）
+    miscExpenses: [], // 自由入力欄
   }));
 
   const [view, setView] = useState<ViewKey>("input");
@@ -296,7 +296,6 @@ export default function App() {
     setData((p) => ({ ...p, workItems: p.workItems.map((w) => (w.id === id ? { ...w, ...patch } : w)) }));
   };
 
-  // 互換性維持のためのダミーハンドラ（MiscExpense用）
   const addMiscExpense = () => {}; 
   const removeMiscExpense = (id: string) => {};
   const updateMiscExpense = (id: string, patch: any) => {};
@@ -307,8 +306,11 @@ export default function App() {
     const blob = new Blob([jsonString], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    const safeClientName = (data.clientName || "案件データ").replace(/[\\/:*?"<>|]/g, "_");
+    
+    // 修正: clientName -> customerName
+    const safeClientName = (data.customerName || "案件データ").replace(/[\\/:*?"<>|]/g, "_");
     const fileName = `KHQ_${safeClientName}_${dateStr}.json`;
+    
     const link = document.createElement("a");
     link.href = url;
     link.download = fileName;
@@ -415,7 +417,6 @@ export default function App() {
             {view === "estimate" && <EstimateView data={data} calc={calc} />}
             {view === "instruction" && <InstructionView data={data} calc={calc} />}
             {view === "inspection" && <InspectionView data={data} setData={setData} />}
-            {/* 以下のビューは旧データ構造依存のため、一旦非表示または要改修 */}
             {view === "spec" && <SpecView data={data} />}
             {view === "compare" && <CompareView data={data} />}
           </main>

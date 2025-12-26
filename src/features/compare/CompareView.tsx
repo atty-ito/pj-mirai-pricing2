@@ -1,14 +1,13 @@
 import { useMemo, useState } from "react";
 import { Data, Tier, InspectionLevel, WorkItem } from "../../types/pricing";
-import { computeCalc, CalcResult, LineItem } from "../../utils/calculations";
+import { computeCalc, CalcResult, LineItem, computeUnitPrice, UnitPriceBreakdown } from "../../utils/calculations";
 import { fmtJPY, inspectionLabel, sizeLabel, colorModeLabel, dpiLabel, formatLabel } from "../../utils/formatters";
-import { PROJECT_FIXED_FEES } from "../../constants/coefficients";
 
 type Props = {
   data: Data;
 };
 
-// 比較用のプラン設定（Step 1の型定義に合わせる）
+// 比較用のプラン設定
 const PLAN_SPECS: Record<Tier, { inspection: InspectionLevel; label: string; desc: string; risk: string; color: string; bg: string; border: string }> = {
   economy: { 
     inspection: "簡易目視検査 (抜き取り)", 
@@ -104,16 +103,68 @@ function CostBar({ structure, maxTotal }: { structure: CostStructure; maxTotal: 
   );
 }
 
+// 詳細内訳テーブル（展開用）
+function DetailBreakdownTable({ item, plans }: { item: WorkItem; plans: any[] }) {
+  const breakdowns = plans.map(p => ({
+    tier: p.tier,
+    label: p.spec.label,
+    bd: computeUnitPrice(p.tier, p.spec.inspection, item) as UnitPriceBreakdown
+  }));
+
+  return (
+    <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 mt-2 text-xs">
+      <h4 className="font-bold text-slate-700 mb-2 flex items-center gap-2">
+        <span className="text-lg">🔍</span> 単価積算ロジックの詳細比較
+      </h4>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse bg-white rounded shadow-sm">
+          <thead>
+            <tr className="bg-slate-100 text-slate-600 border-b border-slate-200">
+              <th className="p-2 w-32">費目</th>
+              <th className="p-2">内容</th>
+              {breakdowns.map(b => (
+                <th key={b.tier} className="p-2 text-right w-24 font-bold text-slate-700">{b.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            <tr className="bg-blue-50/10">
+              <td className="p-2 font-mono text-slate-500">Base</td>
+              <td className="p-2 text-slate-600">基礎単価</td>
+              {breakdowns.map(b => <td key={b.tier} className="p-2 text-right font-bold text-blue-700">{fmtJPY(b.bd.base)}</td>)}
+            </tr>
+            <tr>
+              <td className="p-2 font-mono text-slate-500">Adders</td>
+              <td className="p-2 text-slate-600">サイズ・形式加算</td>
+              {breakdowns.map(b => <td key={b.tier} className="p-2 text-right text-slate-500">{fmtJPY(b.bd.sizeAdder + b.bd.formatAdder)}</td>)}
+            </tr>
+            <tr className="bg-rose-50/20">
+              <td className="p-2 font-mono text-rose-600">Factor</td>
+              <td className="p-2 text-slate-600">適用係数 (CQPIK)</td>
+              {breakdowns.map(b => (
+                <td key={b.tier} className="p-2 text-right font-bold text-rose-600">x{b.bd.factors.capped.toFixed(2)}</td>
+              ))}
+            </tr>
+            <tr className="bg-slate-800 text-white font-bold border-t-2 border-slate-300">
+              <td className="p-2">Total</td>
+              <td className="p-2 text-slate-300 text-[10px]">最終単価</td>
+              {breakdowns.map(b => <td key={b.tier} className="p-2 text-right text-sm">{fmtJPY(b.bd.unitPrice)}</td>)}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------
 // メインコンポーネント
 // ------------------------------------------------------------------
 
 export function CompareView({ data }: Props) {
-  // 3プランシミュレーション
   const plans = useMemo(() => {
     return (["economy", "standard", "premium"] as Tier[]).map((tier) => {
       const spec = PLAN_SPECS[tier];
-      // シミュレーション用データ作成（tierとinspectionLevelを強制上書き）
       const simData: Data = { ...data, tier, inspectionLevel: spec.inspection };
       const calc = computeCalc(simData);
       const structure = analyzeStructure(calc);
@@ -123,6 +174,13 @@ export function CompareView({ data }: Props) {
 
   const [eco, std, pre] = plans;
   const maxStructTotal = Math.max(eco.structure.total, std.structure.total, pre.structure.total);
+
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const toggleRow = (id: string) => {
+    const next = new Set(expandedRows);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setExpandedRows(next);
+  };
 
   return (
     <div className="space-y-10 pb-20 font-sans text-slate-800">
@@ -182,10 +240,8 @@ export function CompareView({ data }: Props) {
             <h2 className="text-lg font-bold text-slate-900">2. コスト構造の分解（CQPIK要因分析）</h2>
             <p className="text-xs text-slate-500 mt-1">
               見積金額（税抜）を「固定費」「基礎」「仕様加算」「品質係数コスト」に分解。
-              <br/>プレミアムプランの増分は主に「品質係数（二重検査・高難易度対応）」に起因します。
             </p>
           </div>
-          {/* 凡例 */}
           <div className="flex gap-4 text-[10px] text-slate-600">
             <div className="flex items-center gap-1.5"><span className="w-3 h-3 bg-blue-500 rounded-sm"/>基礎工程(Base)</div>
             <div className="flex items-center gap-1.5"><span className="w-3 h-3 bg-cyan-400 rounded-sm"/>仕様加算(Adder)</div>
@@ -220,6 +276,7 @@ export function CompareView({ data }: Props) {
           <table className="w-full text-xs text-left border-collapse">
             <thead>
               <tr className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-300">
+                <th className="py-2 px-4 w-10"></th>
                 <th className="py-2 px-3">作業項目</th>
                 <th className="py-2 px-2 text-right">数量</th>
                 <th className="py-2 px-2 text-right bg-emerald-50 text-emerald-800 border-l border-white">Eco 単価</th>
@@ -232,35 +289,50 @@ export function CompareView({ data }: Props) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {data.workItems.map((w) => {
-                // 各プランの行データ取得（L3行を探してくる）
-                // ※L3以外の行（L4など）はここでは除外して、純粋なL3行のみ比較する
+                const isOpen = expandedRows.has(w.id);
                 const rows = plans.map(p => {
-                  const line = p.calc.lineItems.find(li => li.id === `L3-${w.id}`);
-                  return line ? { unitPrice: line.unitPrice, amount: line.amount } : { unitPrice: 0, amount: 0 };
+                  const bd = computeUnitPrice(p.tier, p.spec.inspection, w);
+                  return { unitPrice: bd.finalUnitPrice, amount: bd.finalUnitPrice * w.qty };
                 });
 
                 return (
-                  <tr key={w.id} className="hover:bg-slate-50">
-                    <td className="py-2 px-3 align-top">
-                      <div className="font-bold text-slate-800">{w.title}</div>
-                      <div className="text-[10px] text-slate-500 mt-0.5">
-                        {sizeLabel(w.sizeClass)} / {colorModeLabel(w.colorMode)} / {dpiLabel(w.resolution)}
-                      </div>
-                    </td>
-                    <td className="py-2 px-2 text-right tabular-nums text-slate-600 align-top">
-                      {w.qty.toLocaleString()}<span className="text-[10px] ml-0.5">{w.unit}</span>
-                    </td>
-                    
-                    {/* 単価 */}
-                    <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 bg-emerald-50/10 align-top">{fmtJPY(rows[0].unitPrice)}</td>
-                    <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 bg-blue-50/10 font-bold align-top">{fmtJPY(rows[1].unitPrice)}</td>
-                    <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 bg-rose-50/10 align-top">{fmtJPY(rows[2].unitPrice)}</td>
+                  <>
+                    <tr 
+                      key={w.id} 
+                      onClick={() => toggleRow(w.id)}
+                      className={`cursor-pointer transition-colors hover:bg-slate-50 ${isOpen ? "bg-slate-50" : ""}`}
+                    >
+                      <td className="py-2 px-4 text-center text-slate-400">{isOpen ? "▼" : "▶"}</td>
+                      <td className="py-2 px-3 align-top">
+                        <div className="font-bold text-slate-800">{w.title}</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">
+                          {sizeLabel(w.sizeClass)} / {colorModeLabel(w.colorMode)} / {dpiLabel(w.resolution)}
+                        </div>
+                      </td>
+                      <td className="py-2 px-2 text-right tabular-nums text-slate-600 align-top">
+                        {w.qty.toLocaleString()}<span className="text-[10px] ml-0.5">{w.unit}</span>
+                      </td>
+                      
+                      {/* 単価 */}
+                      <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 bg-emerald-50/10 align-top">{fmtJPY(rows[0].unitPrice)}</td>
+                      <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 bg-blue-50/10 font-bold align-top">{fmtJPY(rows[1].unitPrice)}</td>
+                      <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 bg-rose-50/10 align-top">{fmtJPY(rows[2].unitPrice)}</td>
 
-                    {/* 金額 */}
-                    <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 text-slate-500 align-top">{fmtJPY(rows[0].amount)}</td>
-                    <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 text-slate-900 font-bold align-top">{fmtJPY(rows[1].amount)}</td>
-                    <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 text-slate-500 align-top">{fmtJPY(rows[2].amount)}</td>
-                  </tr>
+                      {/* 金額 */}
+                      <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 text-slate-500 align-top">{fmtJPY(rows[0].amount)}</td>
+                      <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 text-slate-900 font-bold align-top">{fmtJPY(rows[1].amount)}</td>
+                      <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 text-slate-500 align-top">{fmtJPY(rows[2].amount)}</td>
+                    </tr>
+                    
+                    {/* 詳細展開エリア */}
+                    {isOpen && (
+                      <tr>
+                        <td colSpan={9} className="px-4 pb-4 bg-slate-50 border-b border-slate-200">
+                          <DetailBreakdownTable item={w} plans={plans} />
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 );
               })}
             </tbody>

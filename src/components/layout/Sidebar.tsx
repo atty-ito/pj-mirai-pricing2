@@ -1,13 +1,12 @@
 import { Data, ViewKey } from "../../types/pricing";
 
-// ナビゲーション項目の定義
 const VIEW_ITEMS: Array<{ key: ViewKey; label: string; hint: string }> = [
-  { key: "input", label: "入力画面", hint: "案件条件・単価・スイッチ" },
-  { key: "instruction", label: "指示書", hint: "内部用 作業指示書" },
+  { key: "input", label: "入力画面", hint: "案件条件・L1〜L5" },
+  { key: "instruction", label: "指示書", hint: "現場用 作業指示書" },
   { key: "estimate", label: "見積もり", hint: "顧客提出用 見積書" },
-  { key: "compare", label: "比較（内部）", hint: "意思決定用 3プラン比較" },
-  { key: "spec", label: "仕様", hint: "仕様書（標準に連動）" },
-  { key: "inspection", label: "検査", hint: "検査表（全数/抜取など）" },
+  { key: "compare", label: "比較（内部）", hint: "プラン比較・分析" },
+  { key: "spec", label: "仕様", hint: "仕様書 (SOW)" },
+  { key: "inspection", label: "検査", hint: "検査記録表 (QA)" },
 ];
 
 function NavButton(props: {
@@ -45,13 +44,11 @@ function NavButton(props: {
       className={[
         "group w-full rounded-xl border-2 px-4 py-3 text-left transition-all duration-100 ease-in-out relative overflow-hidden",
         "hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:shadow-none",
-        // 立体感を出すための下ボーダー強調
         active 
           ? `border-${accent.border} bg-white shadow-sm border-b-4` 
           : "border-slate-200 bg-white border-b-4 hover:border-slate-300",
       ].join(" ")}
     >
-      {/* Active時の背景色アクセント */}
       {active && <div className={`absolute inset-0 opacity-10 ${accent.bg}`} />}
       
       <div className="relative flex items-center gap-3">
@@ -73,6 +70,14 @@ function NavButton(props: {
 }
 
 export function Sidebar(props: { view: ViewKey; setView: (v: ViewKey) => void; data: Data }) {
+  // 検査レベルの表示を簡略化（文字列の一部判定）
+  const getInspLabel = (lvl: string) => {
+    if (lvl.includes("二重")) return "二重全数";
+    if (lvl.includes("全数")) return "全数";
+    if (lvl.includes("抜き取り") || lvl.includes("簡易")) return "抜取";
+    return "その他";
+  };
+
   return (
     <aside className="w-64 shrink-0 no-print flex flex-col gap-6">
       <nav className="space-y-3">
@@ -88,7 +93,6 @@ export function Sidebar(props: { view: ViewKey; setView: (v: ViewKey) => void; d
         ))}
       </nav>
 
-      {/* 簡易ステータス表示（カード風） */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-100">
           <div className="font-bold text-xs text-slate-400 uppercase tracking-wider">Current Status</div>
@@ -100,18 +104,14 @@ export function Sidebar(props: { view: ViewKey; setView: (v: ViewKey) => void; d
               props.data.tier === 'economy' ? 'bg-green-100 text-green-700' :
               props.data.tier === 'standard' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'
             }`}>
-              {props.data.tier === 'economy' ? 'エコノミー' : props.data.tier === 'standard' ? 'スタンダード' : 'プレミアム'}
+              {props.data.tier.toUpperCase()}
             </div>
           </div>
           <div>
             <div className="text-[10px] text-slate-500 font-medium mb-0.5">検査レベル</div>
-            <div className="font-bold text-slate-700 flex items-center gap-2">
+            <div className="font-bold text-slate-700 flex items-center gap-2 text-xs">
               <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-              {
-                props.data.inspectionLevel === 'none' ? 'なし' : 
-                props.data.inspectionLevel === 'sample' ? '抜取検査' : 
-                props.data.inspectionLevel === 'full' ? '全数検査' : '二重全数'
-              }
+              {getInspLabel(props.data.inspectionLevel)}
             </div>
           </div>
         </div>
