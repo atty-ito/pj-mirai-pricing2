@@ -85,11 +85,11 @@ export default function App() {
   };
 
   const [data, setData] = useState<Data>(() => ({
-    // L1: 基本情報 (国立研究開発法人○○機構)
+    // L1: 基本情報 (○○機構)
     jobNo: "230831001",
     createdDate: "2023-08-31",
     subject: "令和5年度 ○○報告スキャン・電子化・長期保存用資材への格納業務",
-    customerName: "国立研究開発法人○○機構",
+    customerName: "○○機構",
     customerType: "官公庁・自治体",
     jurisdiction: "資料管理担当",
     contactName: "ご担当者 ○○",
