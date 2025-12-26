@@ -1,5 +1,6 @@
+// 変更なし（Step 2で提示したものでOKですが、念のため再掲します）
 import { useState, useMemo, useEffect, useRef, ChangeEvent, FormEvent } from "react";
-import { Data, WorkItem, Tier, ViewKey } from "./types/pricing"; // ★修正: WorkItemを追加
+import { Data, WorkItem, Tier, ViewKey } from "./types/pricing";
 import { computeCalc } from "./utils/calculations";
 import { suggestQuotationNo, suggestInspectionReportNo, uid } from "./utils/formatters";
 import { ISSUER, SYSTEM_NAME, APP_VERSION } from "./constants/coefficients";
@@ -84,7 +85,6 @@ export default function App() {
     setIsAuthenticated(true);
   };
 
-  // 初期データ（自由学園PDFベース）
   const [data, setData] = useState<Data>(() => ({
     // L1: 基本情報
     jobNo: "250520001",
@@ -158,18 +158,18 @@ export default function App() {
     factorCap: 2.2,
     capExceptionApproved: false,
 
-    // 互換性維持フィールド
+    // 互換性維持
     quotationNo: "",
     issuerOrg: ISSUER.org,
     
     // UI制御
     includeQuotation: true,
-    includePriceRationalePage: true, // ★追加: 単価算定根拠
+    includePriceRationalePage: true,
     includeSpecDoc: true,
     includeInstructionDoc: true,
     includeInspectionDoc: true,
 
-    // 検査結果用
+    // 検査結果
     inspectionReportNo: "",
     inspectionIssueDate: "",
     inspectionDate: "",
@@ -185,7 +185,7 @@ export default function App() {
     workItems: [
       {
         id: uid("w"),
-        service: "A",
+        service: "A", // アーカイブ撮影
         title: "史料(A3サイズ以内)のデジタル化",
         qty: 1350,
         unit: "カット",
@@ -247,7 +247,6 @@ export default function App() {
     });
   }, [data.createdDate, data.inspectionIssueDate]);
 
-  // --- データ操作ハンドラ ---
   const addWorkItem = () => {
     setData((p) => ({
       ...p,
@@ -301,17 +300,13 @@ export default function App() {
     }));
   };
 
-  // --- 保存・読込ハンドラ ---
   const handleSaveData = () => {
     const jsonString = JSON.stringify(data, null, 2);
     const blob = new Blob([jsonString], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    
-    // customerNameを使用
     const safeClientName = (data.customerName || "案件データ").replace(/[\\/:*?"<>|]/g, "_");
     const fileName = `KHQ_${safeClientName}_${dateStr}.json`;
-    
     const link = document.createElement("a");
     link.href = url;
     link.download = fileName;
@@ -359,9 +354,7 @@ export default function App() {
         <div className="mb-8 flex items-end justify-between gap-4 no-print border-b border-slate-200 pb-4">
           <div className="flex items-center gap-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white shadow-lg shadow-indigo-200">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" />
-              </svg>
+              <span className="text-xl font-black">OS</span>
             </div>
             <div>
               <h1 className="text-2xl font-black tracking-tight text-slate-900 drop-shadow-sm">{SYSTEM_NAME}</h1>
@@ -373,26 +366,14 @@ export default function App() {
           <div className="text-right text-xs text-slate-500">
             <div className="flex items-center justify-end gap-3 mb-1">
               <div className="px-3 py-1 bg-slate-100 rounded-full font-mono text-slate-600 border border-slate-200">{APP_VERSION}</div>
-              <button
-                type="button"
-                onClick={handleSaveData}
-                className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-emerald-500"
-              >
+              <button onClick={handleSaveData} className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-emerald-500">
                 保存
               </button>
-              <button
-                type="button"
-                onClick={handleClickLoad}
-                className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-indigo-500"
-              >
+              <button onClick={handleClickLoad} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-indigo-500">
                 読込
               </button>
               <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json,application/json" />
-              <button
-                type="button"
-                className="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-slate-800"
-                onClick={() => window.print()}
-              >
+              <button className="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-slate-800" onClick={() => window.print()}>
                 印刷
               </button>
             </div>
@@ -402,19 +383,12 @@ export default function App() {
 
         <div className="flex gap-6">
           <Sidebar view={view} setView={setView} data={data} />
-
           <main className="min-w-0 flex-1">
             {view === "input" && (
               <InputView
-                data={data}
-                setData={setData}
-                calc={calc}
-                addWorkItem={addWorkItem}
-                removeWorkItem={removeWorkItem}
-                updateWorkItem={updateWorkItem}
-                addMiscExpense={addMiscExpense}
-                removeMiscExpense={removeMiscExpense}
-                updateMiscExpense={updateMiscExpense}
+                data={data} setData={setData} calc={calc}
+                addWorkItem={addWorkItem} removeWorkItem={removeWorkItem} updateWorkItem={updateWorkItem}
+                addMiscExpense={addMiscExpense} removeMiscExpense={removeMiscExpense} updateMiscExpense={updateMiscExpense}
               />
             )}
             {view === "estimate" && <EstimateView data={data} calc={calc} />}

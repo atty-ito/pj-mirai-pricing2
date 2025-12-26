@@ -1,4 +1,4 @@
-import { Data, WorkItem, Tier, ServiceCode, MiscExpense } from "../types/pricing";
+import { Data, WorkItem, Tier, ServiceCode } from "../types/pricing";
 import { 
   SERVICE_DEFINITIONS, 
   SIZE_ADDERS, 
@@ -27,6 +27,8 @@ export type UnitPriceBreakdown = {
   subtotal: number;
   finalUnitPrice: number;
   inspectionMultiplier: number;
+  adders: number;
+  formula: string;
 };
 
 export type LineItem = {
@@ -52,7 +54,7 @@ export type CalcResult = {
 };
 
 // ------------------------------------------------------------------
-// 係数計算ロジック
+// 係数計算ロジック (Ver.4 Formula)
 // ------------------------------------------------------------------
 
 export function getBaseUnit(service: ServiceCode, tier: Tier): number {
@@ -63,55 +65,69 @@ export function getBaseUnit(service: ServiceCode, tier: Tier): number {
   return def.min;
 }
 
+// C (Complexity): 原本状態
 export function factorC(item: WorkItem): number {
   let c = 1.0;
-  if (item.fragile) c += 0.2;
+  // Ver.4: 脆弱性加算 係数1.5 (+200相当の重み)
+  if (item.fragile) c += 0.5; 
   if (!item.dismantleAllowed) c += 0.15;
   if (item.restorationRequired) c += 0.15;
   if (item.requiresNonContact) c += 0.1;
   return c;
 }
 
+// Q (Quality): 画質・検査
 export function factorQ(item: WorkItem, inspectionLevel: string): number {
   let q = 1.0;
   const res = String(item.resolution);
-  if (res.includes("600")) q += 0.75;
-  else if (res.includes("400")) q += 0.5;
-  else if (res.includes("300")) q += 0.2;
+  
+  // Ver.4: 解像度係数
+  // 600dpiは生産性が激減するため係数3.5 (Base + 2.5)
+  if (res.includes("600")) q += 2.5; 
+  // 400dpiは標準の1.5倍 (Base + 0.5)
+  else if (res.includes("400")) q += 0.5; 
+  // 300dpi = 1.0 (基準)
 
-  if (inspectionLevel.includes("二重")) q += 0.5;
-  else if (inspectionLevel.includes("全数")) q += 0.25;
+  // 検査係数
+  if (inspectionLevel.includes("二重")) q += 0.5; // +50%
+  else if (inspectionLevel.includes("全数")) q += 0.2; // +20%
 
-  if (item.colorSpace === "AdobeRGB") q += 0.15;
+  if (item.colorSpace === "AdobeRGB") q += 0.1; // +10%
+
   return q;
 }
 
+// P (Process): 工程
 export function factorP(data: Data): number {
   let p = 1.0;
   if (data.tempHumidLog) p += 0.1;
   if (data.fumigation) p += 0.1;
-  // OCRは標準になったため、P係数への影響は「校正」のみ大きくする
-  if (data.ocr) p += 0.05; 
+  
+  // OCR校正（高負荷）
   if (data.ocrProofread) p += 0.25;
+  
+  // 命名規則負荷
   if (data.namingRule === "ファイル名（完全手入力）") p += 0.1;
-  if (data.indexType !== "なし") p += 0.05;
+  
   return p;
 }
 
+// Interaction: 交互作用（上限1.10）
 export function factorInteraction(item: WorkItem, data: Data): number {
   let bonus = 0;
-  const highRes = String(item.resolution).includes("400") || String(item.resolution).includes("600");
-  const deepInspect = data.inspectionLevel.includes("二重");
-  const strongColor = item.colorSpace === "AdobeRGB";
+  const isHighRes = String(item.resolution).includes("600") || String(item.resolution).includes("400");
+  const isFragile = item.fragile;
+  const isAdobe = item.colorSpace === "AdobeRGB";
 
-  if (highRes && deepInspect) bonus += 0.05;
-  if (highRes && strongColor) bonus += 0.03;
-  if (deepInspect && strongColor) bonus += 0.03;
-  if (data.ocrProofread) bonus += 0.03;
+  // 高難度×脆弱 はリスク増
+  if (isHighRes && isFragile) bonus += 0.05;
+  // AdobeRGB×脆弱（照明管理厳格化）
+  if (isAdobe && isFragile) bonus += 0.03;
 
-  return 1.0 + Math.min(bonus, 0.1);
+  return 1.0 + Math.min(bonus, 0.10);
 }
 
+// K_load: 繁忙期調整 (0-10%)
 export function factorKLoad(data: Data): number {
   const k = Math.max(0, Math.min(50, toInt(data.kLoadPct)));
   return 1.0 + k / 100;
@@ -123,7 +139,7 @@ export function applyFactorCap(m: number, data: Data): number {
 }
 
 // ------------------------------------------------------------------
-// メイン計算関数
+// 単価計算 (Compute Unit Price)
 // ------------------------------------------------------------------
 
 export function computeUnitPrice(tier: Tier, inspectionLevel: string, w: WorkItem, dataMock?: Partial<Data>): UnitPriceBreakdown {
@@ -159,19 +175,25 @@ export function computeUnitPrice(tier: Tier, inspectionLevel: string, w: WorkIte
   const rawFactor = c * q * p * inter * k;
   const cappedFactor = applyFactorCap(rawFactor, data);
 
-  const unitPrice = Math.ceil(base * cappedFactor + sizeAdder + fmtAdder);
+  const unitPrice = Math.ceil((base * cappedFactor) + sizeAdder + fmtAdder);
 
   return {
     base,
     factors: { c, q, p, i: inter, k, raw: rawFactor, capped: cappedFactor },
     sizeAdder,
     formatAdder: fmtAdder,
+    adders: sizeAdder + fmtAdder,
     unitPrice,
     subtotal: unitPrice,
     finalUnitPrice: unitPrice,
-    inspectionMultiplier: q
+    inspectionMultiplier: q,
+    formula: `(${base} × ${cappedFactor.toFixed(2)}) + ${sizeAdder + fmtAdder} = ${unitPrice}`
   };
 }
+
+// ------------------------------------------------------------------
+// メイン計算 (Calculate All)
+// ------------------------------------------------------------------
 
 export function computeCalc(data: Data): CalcResult {
   const lineItems: LineItem[] = [];
@@ -189,16 +211,17 @@ export function computeCalc(data: Data): CalcResult {
 
     const amount = bd.unitPrice * qty;
     const serviceName = SERVICE_DEFINITIONS[w.service]?.name || w.service;
-    const explain = `Base(${bd.base})×Factor(${bd.factors.capped.toFixed(2)}) + Adders(${bd.sizeAdder + bd.formatAdder})`;
     
-    // 形式表示（自由入力含む）
+    // 詳細な内訳テキスト作成
+    const explain = `Base:${bd.base} × Factor:${bd.factors.capped.toFixed(2)} (C${bd.factors.c.toFixed(2)} Q${bd.factors.q.toFixed(2)} P${bd.factors.p.toFixed(2)}) + S:${bd.adders}`;
+
     const formatStr = [...(w.fileFormats || []), w.fileFormatsFree].filter(Boolean).join("・");
 
     lineItems.push({
       id: `L3-${w.id}`,
       phase: "L3",
       name: w.title,
-      spec: `${serviceName}\nサイズ: ${w.sizeClass} / 解像度: ${w.resolution} / 色: ${w.colorSpace} / 形式: ${formatStr}`,
+      spec: `${serviceName}\nサイズ:${w.sizeClass} / DPI:${w.resolution} / 色:${w.colorSpace} / 形式:${formatStr}`,
       qty,
       unit: w.unit,
       unitPrice: bd.unitPrice,
@@ -210,11 +233,10 @@ export function computeCalc(data: Data): CalcResult {
     addProcessLineItems(lineItems, w, data, qty);
   }
 
-  // L1, L2, L5: 固定費・納品・その他
+  // L1, L2, L5: 固定費
   addFixedLineItems(lineItems, data, totalVol);
 
   // Misc: 特殊工程・実費
-  // ここでHDD等の単価比較ロジックを適用
   for (const m of data.miscExpenses) {
     let finalUnitPrice = toInt(m.unitPrice);
     let explain = "手入力";
@@ -223,21 +245,19 @@ export function computeCalc(data: Data): CalcResult {
       // 市場価格の30%乗せ
       const withMarkup = Math.round(finalUnitPrice * 1.3);
       
-      // 納品媒体（HDD/SSD）の場合の特別ロジック
-      // 項目名に"HDD"や"SSD"が含まれていれば、標準固定単価と比較して高い方を採用
+      // HDD/SSDの場合の比較ロジック
       if (m.label.toUpperCase().includes("HDD") || m.label.toUpperCase().includes("SSD")) {
         const stdPrice = STANDARD_FIXED_COSTS.HDD;
         if (withMarkup > stdPrice) {
           finalUnitPrice = withMarkup;
-          explain = `実費+30%適用 (標準単価 ${stdPrice} < 算出単価 ${withMarkup})`;
+          explain = `実費+30%適用 (${withMarkup.toLocaleString()} > 規定${stdPrice.toLocaleString()})`;
         } else {
           finalUnitPrice = stdPrice;
-          explain = `標準単価適用 (標準単価 ${stdPrice} > 算出単価 ${withMarkup})`;
+          explain = `規定単価適用 (${stdPrice.toLocaleString()} > 算出${withMarkup.toLocaleString()})`;
         }
       } else {
-        // その他の実費
         finalUnitPrice = withMarkup;
-        explain = "実費 + 30%諸経費";
+        explain = "市場価格 + 30%諸経費";
       }
     }
 
@@ -248,7 +268,6 @@ export function computeCalc(data: Data): CalcResult {
     });
   }
 
-  // フェーズ順ソート
   const phaseOrder: Record<string, number> = { L1: 1, L2: 2, L3: 3, L4: 4, L5: 5, Misc: 6 };
   lineItems.sort((a, b) => (phaseOrder[a.phase] || 99) - (phaseOrder[b.phase] || 99));
 
@@ -261,18 +280,13 @@ export function computeCalc(data: Data): CalcResult {
 function addProcessLineItems(lines: LineItem[], w: WorkItem, data: Data, vol: number) {
   if (vol <= 0) return;
   if (data.namingRule !== "連番のみ") {
-    let u = 10;
-    if (data.namingRule.includes("ファイル名")) u = 30;
-    if (data.namingRule.includes("特殊")) u = 50;
+    let u = METADATA_UNIT_PRICES.folder;
+    if (data.namingRule.includes("ファイル名")) u = METADATA_UNIT_PRICES.file_simple;
+    if (data.namingRule.includes("特殊")) u = METADATA_UNIT_PRICES.special_rule;
     lines.push(createLine(`L4-NAME-${w.id}`, "L4", "メタデータ付与", `規則: ${data.namingRule}`, vol, w.unit, u));
   }
-  // OCRは常に表示、校正有無で単価変動
-  if (data.ocr) {
-    if (data.ocrProofread) {
-      lines.push(createLine(`L4-OCRP-${w.id}`, "L4", "OCR処理 (校正あり)", "高精度校正", vol, w.unit, 20));
-    } else {
-      lines.push(createLine(`L4-OCR-${w.id}`, "L4", "OCR処理 (校正なし)", "機械処理のみ", vol, w.unit, 5));
-    }
+  if (data.ocrProofread) {
+    lines.push(createLine(`L4-OCRP-${w.id}`, "L4", "OCR校正（専門スタッフ）", "高精度校正", vol, w.unit, 20));
   }
 }
 
@@ -281,17 +295,13 @@ function addFixedLineItems(lines: LineItem[], data: Data, totalVol: number) {
   for (const t of BASE_FEE_THRESHOLDS) {
     if (totalVol <= t.limit) { baseFee = t.fee; break; }
   }
-  lines.push(createLine("F-BASE", "L1", "基本料金", "PM費・工程設計費", 1, "式", baseFee));
+  lines.push(createLine("F-BASE", "L1", "基本料金", `案件規模調整 (Vol: ${totalVol.toLocaleString()})`, 1, "式", baseFee));
+  lines.push(createLine("L1-SOW", "L1", "要件定義・仕様策定", "SOW作成・合意形成", 1, "式", 15000));
   
-  // 要件定義費（L1）
-  lines.push(createLine("L1-SOW", "L1", "要件定義・仕様策定", "仕様書作成・合意形成", 1, "式", 15000));
-  
-  // 搬送費（L2）
   const dist = toInt(data.transportDistanceKm);
   const trips = Math.max(1, toInt(data.transportTrips));
   let perKm = 120;
   let baseTrans = 5000;
-  
   if (data.shippingType === "セキュリティ専用便") { baseTrans = 30000; perKm = 500; }
   else if (data.shippingType === "専用便") { baseTrans = 10000; perKm = 250; }
   else if (data.shippingType === "特殊セキュリティカー") { baseTrans = 60000; perKm = 800; }
@@ -299,25 +309,16 @@ function addFixedLineItems(lines: LineItem[], data: Data, totalVol: number) {
   const transPrice = baseTrans + (dist * perKm);
   lines.push(createLine("L2-TRANS", "L2", `搬送費 (${data.shippingType})`, `距離${dist}km × 往復${trips}回`, trips, "往復", transPrice));
 
-  if (data.strictCheckIn) lines.push(createLine("L2-CHK", "L2", "厳格照合・受領記録", "リスト突合・借用書作成", 1, "式", 10000));
-  if (data.fumigation) lines.push(createLine("L2-FUMI", "L2", "燻蒸処理", "密閉環境・殺虫殺菌", 1, "式", STANDARD_FIXED_COSTS.FUMIGATION));
-  if (data.tempHumidLog) lines.push(createLine("L4-ENV", "L4", "環境モニタリング", "温湿度ログ提出 (60分間隔)", 1, "式", 10000));
-  
-  // 納品媒体（L5）: MiscExpenseで入力されたものは重複計上しないよう、ここでは自動計算分を「標準」として追加
-  // ただし、MiscExpenseを使わずにチェックボックスだけで選んだ場合のロジックが必要
-  // 今回の要件では「実費入力させる」ため、自動計上はDVD/BDなどの光学メディアのみ残し、HDDはMiscExpense推奨とするか、
-  // あるいはここで計上し、InputViewで制御するか。
-  // → シンプルに、Checkboxで選ばれたものは「標準単価」で計上する。
-  // MiscExpenseで「HDD」が入力された場合は、そちらが優先される（二重計上になるため、運用でCheckboxを外すか、ここで判定する）。
-  // ここでは「CheckboxがON」かつ「MiscExpenseに同種がない」場合のみ追加するロジックにする。
-  
+  if (data.strictCheckIn) lines.push(createLine("L2-CHK", "L2", "厳格照合・受領記録", "リスト突合", 1, "式", 10000));
+  if (data.fumigation) lines.push(createLine("L2-FUMI", "L2", "燻蒸処理", "密閉環境", 1, "式", STANDARD_FIXED_COSTS.FUMIGATION));
+  if (data.tempHumidLog) lines.push(createLine("L4-ENV", "L4", "環境モニタリング", "温湿度ログ提出", 1, "式", 10000));
+
   const mediaCount = Math.max(1, toInt(data.mediaCount));
   const miscLabels = data.miscExpenses.map(m => m.label.toUpperCase());
 
   data.deliveryMedia.forEach(m => {
-    // MiscExpenseに同等のものが含まれていればスキップ（二重計上防止）
     const isHdd = m.includes("HDD") || m.includes("SSD");
-    const hasManualEntry = miscLabels.some(l => isHdd ? (l.includes("HDD") || l.includes("SSD")) : l.includes(m.toUpperCase()));
+    const hasManualEntry = miscLabels.some(l => (isHdd ? (l.includes("HDD") || l.includes("SSD")) : l.includes(m.toUpperCase())));
 
     if (!hasManualEntry) {
       if (isHdd) {
