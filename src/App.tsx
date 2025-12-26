@@ -1,6 +1,5 @@
-// 変更なし（Step 2で提示したものでOKですが、念のため再掲します）
 import { useState, useMemo, useEffect, useRef, ChangeEvent, FormEvent } from "react";
-import { Data, WorkItem, Tier, ViewKey } from "./types/pricing";
+import { Data, WorkItem, ViewKey } from "./types/pricing";
 import { computeCalc } from "./utils/calculations";
 import { suggestQuotationNo, suggestInspectionReportNo, uid } from "./utils/formatters";
 import { ISSUER, SYSTEM_NAME, APP_VERSION } from "./constants/coefficients";
@@ -158,7 +157,7 @@ export default function App() {
     factorCap: 2.2,
     capExceptionApproved: false,
 
-    // 互換性維持
+    // 互換性維持フィールド
     quotationNo: "",
     issuerOrg: ISSUER.org,
     
@@ -169,7 +168,7 @@ export default function App() {
     includeInstructionDoc: true,
     includeInspectionDoc: true,
 
-    // 検査結果
+    // 検査結果用
     inspectionReportNo: "",
     inspectionIssueDate: "",
     inspectionDate: "",
@@ -185,7 +184,7 @@ export default function App() {
     workItems: [
       {
         id: uid("w"),
-        service: "A", // アーカイブ撮影
+        service: "A",
         title: "史料(A3サイズ以内)のデジタル化",
         qty: 1350,
         unit: "カット",
@@ -354,7 +353,10 @@ export default function App() {
         <div className="mb-8 flex items-end justify-between gap-4 no-print border-b border-slate-200 pb-4">
           <div className="flex items-center gap-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white shadow-lg shadow-indigo-200">
-              <span className="text-xl font-black">OS</span>
+              {/* PCアイコンに変更 */}
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" />
+              </svg>
             </div>
             <div>
               <h1 className="text-2xl font-black tracking-tight text-slate-900 drop-shadow-sm">{SYSTEM_NAME}</h1>

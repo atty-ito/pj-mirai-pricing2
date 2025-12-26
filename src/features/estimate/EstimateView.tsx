@@ -147,26 +147,7 @@ export function EstimateView({ data, calc }: Props) {
       {data.includePriceRationalePage && (
         <Page>
           <DocHeader title="単価算定根拠（別紙）" data={data} />
-          <div className="mb-6 bg-slate-50 p-4 rounded border border-slate-200">
-            <h3 className="font-bold text-slate-800 mb-2 text-sm">■ 適正価格算定ロジック</h3>
-            <p className="text-xs text-slate-600 mb-2">
-              本見積は、国際マイクロ写真工業社標準の「高付加価値アーカイブ算定基準 (Ver.4)」に基づき、公正な積算を行っております。
-            </p>
-            <div className="font-mono text-center text-lg font-bold bg-white p-2 border border-slate-300 rounded mb-2">
-              Unit Price = (Base × Factor) + Adders
-            </div>
-            <div className="grid grid-cols-2 gap-4 text-[10pt]">
-              <ul className="list-disc list-inside space-y-1">
-                <li><strong>Base (基準単価):</strong> アーカイブ専門技術者による標準処理コスト</li>
-                <li><strong>Factor (係数):</strong> 原本状態・要求品質・特殊工程による難易度係数</li>
-              </ul>
-              <ul className="list-disc list-inside space-y-1">
-                <li><strong>Adders (加算):</strong> サイズ超過・特殊形式・付帯作業の固定加算</li>
-                <li><strong>Cap:</strong> 係数上限 {data.factorCap.toFixed(1)}</li>
-              </ul>
-            </div>
-          </div>
-
+          
           <div className="flex-1 space-y-6">
             {Object.entries(calc.unitBreakdowns).map(([id, bd]) => {
               const workItem = data.workItems.find(w => w.id === id);
@@ -192,20 +173,22 @@ export function EstimateView({ data, calc }: Props) {
                         </tbody>
                       </table>
                     </div>
-                    <div>
+                    {/* 修正: overflow対策とレイアウト調整 */}
+                    <div className="flex flex-col min-w-0">
                       <h4 className="font-bold mb-2 text-white bg-slate-600 px-2 py-1 rounded-sm">2. 係数加算の根拠 (Reasoning)</h4>
-                      <div className="border border-slate-300 p-2 bg-white h-full">
+                      <div className="border border-slate-300 p-3 bg-white h-full flex flex-col justify-between">
                         {bd.factorDetails.length > 0 ? (
-                          <ul className="list-disc list-inside space-y-1">
+                          <ul className="list-disc list-inside space-y-1 overflow-y-auto max-h-[150px]">
                             {bd.factorDetails.map((reason, idx) => (
-                              <li key={idx} className="text-slate-700 font-bold">{reason}</li>
+                              <li key={idx} className="text-slate-700 font-bold leading-tight">{reason}</li>
                             ))}
                           </ul>
                         ) : (
                           <div className="text-slate-400">標準仕様のため係数加算なし (Factor: 1.0)</div>
                         )}
-                        <div className="mt-3 pt-2 border-t border-slate-200 text-right text-slate-500 font-mono">
-                          Total Factor: x{bd.factors.capped.toFixed(2)}
+                        <div className="mt-3 pt-2 border-t border-slate-200 text-right text-slate-500 font-mono text-[10px]">
+                          <div>Calc: {bd.formula}</div>
+                          <div className="font-bold text-xs mt-1">Total Factor: x{bd.factors.capped.toFixed(2)}</div>
                         </div>
                       </div>
                     </div>
@@ -213,6 +196,11 @@ export function EstimateView({ data, calc }: Props) {
                 </div>
               );
             })}
+          </div>
+
+          <div className="mt-auto pt-4 border-t border-slate-200 text-[8pt] text-slate-400 leading-tight">
+            <p>※ 単価算定ロジック: Unit Price = (Base × Factor) + Adders</p>
+            <p>※ Base: 基準単価, Factor: 難易度係数積(上限あり), Adders: 固定加算</p>
           </div>
           <DocFooter page={2} total={totalPages} />
         </Page>
