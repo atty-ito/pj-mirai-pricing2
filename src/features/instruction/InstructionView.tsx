@@ -8,6 +8,7 @@ type Props = {
   calc: any;
 };
 
+// ヘッダー（社内用）
 function InternalHeader({ title, data }: { title: string; data: Data }) {
   return (
     <div className="border-b-2 border-slate-800 pb-4 mb-6">
@@ -70,7 +71,7 @@ export function InstructionView({ data }: Props) {
             <thead className="bg-slate-50">
               <tr>
                 <th className="border border-slate-300 p-2 w-8">No</th>
-                <th className="border border-slate-300 p-2">作業項目名称 / サービス区分</th>
+                <th className="border border-slate-300 p-2">作業項目 / サービス</th>
                 <th className="border border-slate-300 p-2 w-24">予定数量</th>
                 <th className="border border-slate-300 p-2">スキャン仕様</th>
                 <th className="border border-slate-300 p-2 w-48">原本条件</th>
@@ -90,14 +91,15 @@ export function InstructionView({ data }: Props) {
                   </td>
                   <td className="border border-slate-300 p-2">
                     <div className="font-semibold">{sizeLabel(w.sizeClass)} / {dpiLabel(w.resolution)} / {colorModeLabel(w.colorSpace)}</div>
-                    <div className="mt-1 text-slate-600">形式: {w.fileFormats.map(formatLabel).join(", ")}</div>
+                    <div className="mt-1 text-slate-600">
+                      形式: {[...w.fileFormats, w.fileFormatsFree].filter(Boolean).join(", ")}
+                    </div>
                   </td>
                   <td className="border border-slate-300 p-2">
                     <div className="flex flex-wrap gap-1">
-                      {w.fragile && <span className="px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded border border-rose-200 font-bold">脆弱資料</span>}
+                      {w.fragile && <span className="px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded border border-rose-200 font-bold">脆弱</span>}
                       {w.requiresNonContact && <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded border border-purple-200">非接触</span>}
                       {w.dismantleAllowed ? <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-100">解体可</span> : <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded border border-slate-200">解体不可</span>}
-                      {w.restorationRequired && <span className="px-1.5 py-0.5 bg-orange-50 text-orange-700 rounded border border-orange-100">復元必須</span>}
                     </div>
                   </td>
                 </tr>
@@ -134,7 +136,7 @@ export function InstructionView({ data }: Props) {
               </tbody>
             </table>
           </section>
-
+          
           <section>
             <h3 className="text-sm font-bold border-l-4 border-indigo-600 pl-2 mb-2 uppercase">3. 画像処理・メタデータ</h3>
             <table className="w-full text-xs border-collapse border border-slate-300">
@@ -151,7 +153,6 @@ export function InstructionView({ data }: Props) {
                   <td className="border border-slate-300 p-2">
                     <div className="font-bold">{data.namingRule}</div>
                     <div className="text-[10px] text-slate-500">構造: {data.folderStructure}</div>
-                    <div className="mt-1">索引: {data.indexType}</div>
                   </td>
                 </tr>
                 <tr>
@@ -178,14 +179,9 @@ export function InstructionView({ data }: Props) {
             <div>
               <div className="text-xs text-slate-500 font-bold">納品媒体</div>
               <div>
-                {data.deliveryMedia.join(", ")} 
-                <span className="ml-2 text-xs">({data.mediaCount}セット / ラベル: {data.labelPrint ? "あり" : "なし"})</span>
+                {[...data.deliveryMedia, ...data.miscExpenses.filter(m => m.calcType==="expense").map(m=>m.label)].join(", ")}
+                <span className="ml-2 text-xs">({data.mediaCount}セット)</span>
               </div>
-            </div>
-            <div className="h-8 w-px bg-slate-300"></div>
-            <div>
-              <div className="text-xs text-slate-500 font-bold">特記事項</div>
-              <div>保管: {data.longTermStorageMonths}ヶ月 / 消去証明: {data.dataDeletionProof ? "あり" : "なし"}</div>
             </div>
           </div>
         </section>

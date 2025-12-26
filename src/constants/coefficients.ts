@@ -1,18 +1,25 @@
 import { ServiceCode } from "../types/pricing";
 
 // アプリケーション定数
-export const SYSTEM_NAME = "Archive OS v24.1";
+export const SYSTEM_NAME = "KHQ見積もり統合システム";
+export const APP_VERSION = "v25.5.0"; // バージョン更新
 
-// 発行者のデフォルト情報
+// 発行者のデフォルト情報（郵便番号・住所分離）
 export const ISSUER = {
   org: "株式会社国際マイクロ写真工業社",
-  address: "東京都新宿区箪笥町43",
+  rep: "代表取締役 森松 義喬", // 画像に合わせて修正
+  zip: "162-0833",
+  address: "東京都新宿区箪笥町4-3", // 連絡先住所
+  dept: "(営業部・資材販売部・オペレーションセンター)",
+  hqAddress: "東京都新宿区箪笥町5 (経営管理本部)",
   tel: "03-3260-5931",
-  fax: "03-3260-5935",
-  cert: "JIS Q 27001 (ISMS) / プライバシーマーク取得済",
+  fax: "03-3269-4387",
+  email: "e@kmsym.com",
+  cert: "Pマーク / ISO27001(ISMS) / ISO9001 / ISO14001 認証取得",
+  regist_no: "T1234567890123" // 適格請求書番号（仮）
 };
 
-// --- 選択肢定数 (Type定義の元) ---
+// --- 選択肢定数 ---
 export const INSPECTION_LEVELS = [
   "簡易目視検査 (抜き取り)",
   "標準全数検査 (作業者のみ)",
@@ -22,6 +29,12 @@ export const INSPECTION_LEVELS = [
 export const COLOR_OPTS = ["モノクローム (TIFF/MMR)", "sRGB", "AdobeRGB"] as const;
 
 export const RESOLUTIONS = ["200dpi", "300dpi", "400dpi", "600dpi", "400dpi相当 (解像力120本/mm)"] as const;
+
+export const SPEC_PROFILES = [
+  { value: "standard", label: "標準 (Standard)" },
+  { value: "ndl", label: "詳細 (NDL準拠)" },
+  { value: "gunma", label: "厳格 (公文書・文化財級)" },
+] as const;
 
 // --- 係数・単価テーブル ---
 
@@ -41,8 +54,7 @@ export const SIZE_ADDERS: Record<string, number> = {
   "A4以下": 0, "A4/B5": 0,
   "A3": 0,
   "B4": 50,
-  "A2": 2000,
-  "A2以上": 2000,
+  "A2": 2000, "A2以上": 2000,
   "B2": 2500,
   "A1": 3000,
   "B3": 1500,
@@ -50,12 +62,11 @@ export const SIZE_ADDERS: Record<string, number> = {
   "図面特大": 5000,
 };
 
-// 形式加算
+// 形式加算（旧版準拠）
 export const FORMAT_ADDERS: Record<string, number> = {
   TIFF: 0,
   PDF: 10,
-  JPG: 10,
-  JPEG: 10,
+  JPG: 10, JPEG: 10,
   "PDF/A": 10,
   "マルチPDF": 10,
   JPEG2000: 20,
@@ -66,10 +77,10 @@ export const FORMAT_ADDERS: Record<string, number> = {
 // メタデータ入力単価
 export const METADATA_UNIT_PRICES = {
   none: 0,
-  folder: 10,       // フォルダ名のみ
-  file_simple: 30,  // 背文字など
-  file_full: 30,    // 完全手入力
-  special_rule: 50, // 特殊規則
+  folder: 10,
+  file_simple: 30,
+  file_full: 30,
+  special_rule: 50,
 };
 
 // 基本料金テーブル
@@ -78,3 +89,12 @@ export const BASE_FEE_THRESHOLDS = [
   { limit: 10000, fee: 20000 },
   { limit: Infinity, fee: 15000 },
 ];
+
+// 標準固定単価（比較計算用）
+export const STANDARD_FIXED_COSTS = {
+  HDD: 20000,   // SSD/HDD調達・検証費
+  DVDR: 6000,
+  BDR: 9000,
+  LABEL: 500,
+  FUMIGATION: 20000,
+};

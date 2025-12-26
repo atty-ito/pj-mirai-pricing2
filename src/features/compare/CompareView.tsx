@@ -1,159 +1,137 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Data, Tier, InspectionLevel, WorkItem } from "../../types/pricing";
 import { computeCalc, CalcResult, computeUnitPrice, UnitPriceBreakdown } from "../../utils/calculations";
-import { fmtJPY, inspectionLabel, sizeLabel, colorModeLabel, dpiLabel, formatLabel } from "../../utils/formatters";
+import { fmtJPY, sizeLabel, colorModeLabel, dpiLabel, formatLabel } from "../../utils/formatters";
 
 type Props = {
   data: Data;
 };
 
-// 比較用のプラン設定
-const PLAN_SPECS: Record<Tier, { inspection: InspectionLevel; label: string; desc: string; risk: string; color: string; bg: string; border: string }> = {
+// ------------------------------------------------------------------
+// 定義・ヘルパー
+// ------------------------------------------------------------------
+
+const PLAN_META: Record<Tier, { 
+  label: string; 
+  inspection: InspectionLevel;
+  theme: "emerald" | "blue" | "rose"; 
+  desc: string;
+  riskLevel: number; // 1(低) - 5(高) ※低いほど安全
+  qualityLevel: number; // 1(低) - 5(高)
+}> = {
   economy: { 
-    inspection: "簡易目視検査 (抜き取り)", 
     label: "エコノミー", 
-    desc: "価格重視。工程を簡素化し、抜取検査でコストを抑制。",
-    risk: "手戻り・納品後の微修正リスクを許容できる場合に推奨。",
-    color: "text-emerald-700", bg: "bg-emerald-50", border: "border-emerald-200"
+    inspection: "簡易目視検査 (抜き取り)", 
+    theme: "emerald",
+    desc: "コスト最優先。検査は抜取のみとし、工程内での手戻りを許容する。",
+    riskLevel: 4, 
+    qualityLevel: 2 
   },
   standard: { 
-    inspection: "標準全数検査 (作業者のみ)", 
     label: "スタンダード", 
-    desc: "標準品質。基本工程と全数検査で品質を担保。",
-    risk: "公文書として十分な品質。文字可読性や順序を保証する。",
-    color: "text-blue-700", bg: "bg-blue-50", border: "border-blue-200"
+    inspection: "標準全数検査 (作業者のみ)", 
+    theme: "blue",
+    desc: "標準品質。全数検査により公文書として十分な品質を担保する。",
+    riskLevel: 2, 
+    qualityLevel: 4 
   },
   premium: { 
-    inspection: "二重全数検査 (有資格者による再検)", 
     label: "プレミアム", 
-    desc: "品質最優先。二重検査と厳格な管理で完全性を追求。",
-    risk: "重要文化財・機密文書向け。監査に耐えうる証跡を残す。",
-    color: "text-rose-700", bg: "bg-rose-50", border: "border-rose-200"
+    inspection: "二重全数検査 (有資格者による再検)", 
+    theme: "rose",
+    desc: "品質・管理最優先。二重検査と詳細ログにより監査耐性を保証。",
+    riskLevel: 1, 
+    qualityLevel: 5 
   },
 };
 
-// コスト構造（分析用）
 type CostStructure = {
-  fixed: number;       // L1, L2, L5 (固定費)
-  variableBase: number; // L3 Base * Qty
-  variableAdders: number; // L3 (Size + Format) * Qty
-  qualityCost: number; // L3 Factor増分 (UnitPrice - Base - Adders) * Qty
-  misc: number;        // Misc
+  fixed: number;
+  base: number;
+  adders: number;
+  factorCost: number;
+  misc: number;
   total: number;
 };
 
-// 分析ロジック（CQPIK対応版）
 function analyzeStructure(calc: CalcResult): CostStructure {
-  let fixed = 0;
-  let variableBase = 0;
-  let variableAdders = 0;
-  let qualityCost = 0;
-  let misc = 0;
+  let fixed = 0, base = 0, adders = 0, factorCost = 0, misc = 0;
 
-  for (const item of calc.lineItems) {
-    if (item.kind === "misc") {
-      misc += item.amount;
-    } else if (item.kind === "fixed" || item.phase === "L1" || item.phase === "L2" || item.phase === "L5") {
-      fixed += item.amount;
-    } else if (item.phase === "L4") {
-      // L4（OCRなどの付帯処理）は品質・仕様コストの一部とみなす
-      variableAdders += item.amount;
-    } else if (item.phase === "L3") {
-      // L3項目の内訳分解
-      const idStr = item.id.replace("L3-", ""); // ID抽出
-      const bd = calc.unitBreakdowns[idStr];
+  for (const li of calc.lineItems) {
+    if (li.kind === "misc") misc += li.amount;
+    else if (li.kind === "fixed" || ["L1", "L2", "L5"].includes(li.phase)) fixed += li.amount;
+    else if (li.phase === "L4") adders += li.amount; // 付帯処理
+    else if (li.phase === "L3") {
+      // L3の内訳分解
+      const id = li.id.replace("L3-", "");
+      const bd = calc.unitBreakdowns[id];
       if (bd) {
-        // Base分
-        const baseAmt = bd.base * item.qty;
-        // Adder分
-        const adderAmt = (bd.sizeAdder + bd.formatAdder) * item.qty;
-        // Quality(Factor)分 = 全体 - Base - Adder
-        const qAmt = item.amount - baseAmt - adderAmt;
-
-        variableBase += baseAmt;
-        variableAdders += adderAmt;
-        qualityCost += qAmt;
+        const b = bd.base * li.qty;
+        const a = (bd.sizeAdder + bd.formatAdder) * li.qty;
+        const f = li.amount - b - a; // 残りが係数コスト
+        base += b;
+        adders += a;
+        factorCost += f;
       } else {
-        // 内訳不明な場合は全額Baseへ（異常系）
-        variableBase += item.amount;
+        base += li.amount;
       }
     }
   }
-
-  return { fixed, variableBase, variableAdders, qualityCost, misc, total: calc.subtotal };
+  return { fixed, base, adders, factorCost, misc, total: calc.subtotal };
 }
 
 // ------------------------------------------------------------------
 // サブコンポーネント
 // ------------------------------------------------------------------
 
-function CostBar({ structure, maxTotal }: { structure: CostStructure; maxTotal: number }) {
-  const getPct = (val: number) => (maxTotal > 0 ? (val / maxTotal) * 100 : 0);
+// リスク・品質メーター
+function LevelMeter({ level, type, theme }: { level: number, type: "Risk" | "Quality", theme: string }) {
+  const max = 5;
+  const isRisk = type === "Risk";
+  const label = isRisk ? "リスク残存率" : "品質保証レベル";
+  
+  // Riskは低いほど良い(緑)、高いほど悪い(赤)
+  // Qualityは高いほど良い(青/赤)、低いほど悪い(グレー)
   
   return (
-    <div className="w-full">
-      <div className="flex h-4 w-full rounded-full overflow-hidden bg-slate-100 ring-1 ring-slate-200/50">
-        <div style={{ width: `${getPct(structure.variableBase)}%` }} className="bg-blue-500" title="基礎変動費" />
-        <div style={{ width: `${getPct(structure.variableAdders)}%` }} className="bg-cyan-400" title="仕様・付帯加算" />
-        <div style={{ width: `${getPct(structure.qualityCost)}%` }} className="bg-rose-400" title="品質係数コスト" />
-        <div style={{ width: `${getPct(structure.fixed)}%` }} className="bg-slate-500" title="固定費" />
-        <div style={{ width: `${getPct(structure.misc)}%` }} className="bg-amber-400" title="実費" />
+    <div className="flex items-center gap-2 text-[10px]">
+      <div className="w-16 font-bold text-slate-500 text-right">{label}</div>
+      <div className="flex gap-0.5">
+        {[...Array(max)].map((_, i) => {
+          const active = i < level;
+          let bg = "bg-slate-200";
+          if (active) {
+            if (isRisk) bg = i < 2 ? "bg-emerald-400" : i < 3 ? "bg-yellow-400" : "bg-rose-500";
+            else bg = theme === "rose" ? "bg-rose-500" : theme === "blue" ? "bg-blue-500" : "bg-emerald-500";
+          }
+          return <div key={i} className={`h-2 w-3 rounded-sm ${bg}`} />;
+        })}
       </div>
     </div>
   );
 }
 
-// 詳細内訳テーブル（展開用）
-function DetailBreakdownTable({ item, plans }: { item: WorkItem; plans: any[] }) {
-  const breakdowns = plans.map(p => ({
-    tier: p.tier,
-    label: p.spec.label,
-    bd: computeUnitPrice(p.tier, p.spec.inspection, item) as UnitPriceBreakdown
-  }));
-
+// コスト構造バー
+function CostStructureBar({ st, max }: { st: CostStructure; max: number }) {
+  const pct = (v: number) => (max > 0 ? (v / max) * 100 : 0);
   return (
-    <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 mt-2 text-xs">
-      <h4 className="font-bold text-slate-700 mb-2 flex items-center gap-2">
-        <span className="text-lg">🔍</span> 単価積算ロジックの詳細比較
-      </h4>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse bg-white rounded shadow-sm">
-          <thead>
-            <tr className="bg-slate-100 text-slate-600 border-b border-slate-200">
-              <th className="p-2 w-32">費目</th>
-              <th className="p-2">内容</th>
-              {breakdowns.map(b => (
-                <th key={b.tier} className="p-2 text-right w-24 font-bold text-slate-700">{b.label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            <tr className="bg-blue-50/10">
-              <td className="p-2 font-mono text-slate-500">Base</td>
-              <td className="p-2 text-slate-600">基礎単価</td>
-              {breakdowns.map(b => <td key={b.tier} className="p-2 text-right font-bold text-blue-700">{fmtJPY(b.bd.base)}</td>)}
-            </tr>
-            <tr>
-              <td className="p-2 font-mono text-slate-500">Adders</td>
-              <td className="p-2 text-slate-600">サイズ・形式加算</td>
-              {breakdowns.map(b => <td key={b.tier} className="p-2 text-right text-slate-500">{fmtJPY(b.bd.sizeAdder + b.bd.formatAdder)}</td>)}
-            </tr>
-            <tr className="bg-rose-50/20">
-              <td className="p-2 font-mono text-rose-600">Factor</td>
-              <td className="p-2 text-slate-600">適用係数 (CQPIK)</td>
-              {breakdowns.map(b => (
-                <td key={b.tier} className="p-2 text-right font-bold text-rose-600">x{b.bd.factors.capped.toFixed(2)}</td>
-              ))}
-            </tr>
-            <tr className="bg-slate-800 text-white font-bold border-t-2 border-slate-300">
-              <td className="p-2">Total</td>
-              <td className="p-2 text-slate-300 text-[10px]">最終単価</td>
-              {breakdowns.map(b => <td key={b.tier} className="p-2 text-right text-sm">{fmtJPY(b.bd.unitPrice)}</td>)}
-            </tr>
-          </tbody>
-        </table>
-      </div>
+    <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden flex ring-1 ring-slate-200">
+      <div style={{ width: `${pct(st.base)}%` }} className="bg-slate-400" title={`基礎単価: ${fmtJPY(st.base)}`} />
+      <div style={{ width: `${pct(st.adders)}%` }} className="bg-sky-400" title={`仕様加算: ${fmtJPY(st.adders)}`} />
+      <div style={{ width: `${pct(st.factorCost)}%` }} className="bg-indigo-500" title={`係数コスト: ${fmtJPY(st.factorCost)}`} />
+      <div style={{ width: `${pct(st.fixed)}%` }} className="bg-amber-400" title={`固定費: ${fmtJPY(st.fixed)}`} />
+      <div style={{ width: `${pct(st.misc)}%` }} className="bg-slate-600" title={`実費: ${fmtJPY(st.misc)}`} />
     </div>
+  );
+}
+
+// 係数バッジ
+function FactorBadge({ label, val }: { label: string; val: number }) {
+  const isHigh = val > 1.0;
+  return (
+    <span className={`inline-flex items-center px-1 rounded text-[9px] font-mono border ${isHigh ? "bg-white border-slate-300 text-slate-700 font-bold" : "bg-slate-50 border-slate-100 text-slate-400"}`}>
+      {label}:{val.toFixed(2)}
+    </span>
   );
 }
 
@@ -164,176 +142,215 @@ function DetailBreakdownTable({ item, plans }: { item: WorkItem; plans: any[] })
 export function CompareView({ data }: Props) {
   const plans = useMemo(() => {
     return (["economy", "standard", "premium"] as Tier[]).map((tier) => {
-      const spec = PLAN_SPECS[tier];
-      const simData: Data = { ...data, tier, inspectionLevel: spec.inspection };
+      const meta = PLAN_META[tier];
+      // 比較用に強制設定して計算
+      const simData: Data = { ...data, tier, inspectionLevel: meta.inspection };
       const calc = computeCalc(simData);
-      const structure = analyzeStructure(calc);
-      return { tier, spec, calc, structure };
+      const st = analyzeStructure(calc);
+      return { tier, meta, calc, st };
     });
   }, [data]);
 
   const [eco, std, pre] = plans;
-  const maxStructTotal = Math.max(eco.structure.total, std.structure.total, pre.structure.total);
-
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const toggleRow = (id: string) => {
-    const next = new Set(expandedRows);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    setExpandedRows(next);
-  };
+  const maxTotal = Math.max(eco.calc.total, std.calc.total, pre.calc.total);
+  const maxStTotal = Math.max(eco.st.total, std.st.total, pre.st.total);
 
   return (
-    <div className="space-y-10 pb-20 font-sans text-slate-800">
+    <div className="space-y-8 pb-20 font-sans text-slate-800">
       
-      {/* 1. 経営判断用サマリ */}
-      <section>
-        <div className="flex items-center gap-3 mb-4">
-          <h2 className="text-xl font-bold text-slate-900">1. 総合比較サマリ（経営判断用）</h2>
-          <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs font-bold rounded border border-yellow-200">
-            社外秘
-          </span>
+      {/* 1. 経営サマリ (Dashboard) */}
+      <section className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+          <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">プラン別 総合評価サマリ</h2>
+            <p className="text-xs text-slate-500">コスト・品質・リスクのトレードオフ分析（内部検討用）</p>
+          </div>
         </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {plans.map((p) => {
             const isBase = p.tier === "economy";
             const diff = p.calc.total - eco.calc.total;
+            const diffPct = eco.calc.total > 0 ? (diff / eco.calc.total) * 100 : 0;
+            const borderColor = p.tier === "premium" ? "border-rose-300" : p.tier === "standard" ? "border-blue-300" : "border-emerald-300";
+            
             return (
-              <div key={p.tier} className={`rounded-xl border-2 p-5 bg-white shadow-sm relative overflow-hidden ${p.spec.border}`}>
-                <div className={`absolute top-0 left-0 w-full h-1 ${p.tier === 'premium' ? 'bg-rose-500' : p.tier === 'standard' ? 'bg-blue-500' : 'bg-emerald-500'}`} />
-                
-                <div className="flex justify-between items-baseline mb-2">
-                  <h3 className={`text-lg font-bold ${p.spec.color}`}>{p.spec.label}</h3>
+              <div key={p.tier} className={`relative p-5 rounded-xl border-2 bg-white shadow-sm hover:shadow-md transition-shadow ${borderColor}`}>
+                {/* Header */}
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className={`text-lg font-black tracking-tight ${p.meta.theme === "rose" ? "text-rose-700" : p.meta.theme === "blue" ? "text-blue-700" : "text-emerald-700"}`}>
+                      {p.meta.label}
+                    </h3>
+                    <div className="text-[10px] text-slate-500 font-bold mt-0.5">{p.meta.inspection.split(" ")[0]}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-black text-slate-900 tabular-nums tracking-tighter">
+                      {fmtJPY(p.calc.total)}
+                    </div>
+                    {!isBase && (
+                      <div className="text-xs font-bold text-rose-600">
+                        +{fmtJPY(diff)} ({diffPct.toFixed(0)}%)
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="text-xs text-slate-500 font-bold mb-2">{p.spec.inspection}</div>
 
+                {/* Metrics */}
+                <div className="space-y-2 mb-4 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                  <LevelMeter level={p.meta.riskLevel} type="Risk" theme={p.meta.theme} />
+                  <LevelMeter level={p.meta.qualityLevel} type="Quality" theme={p.meta.theme} />
+                </div>
+
+                {/* Cost Structure Bar */}
                 <div className="mb-4">
-                  <div className="text-3xl font-black text-slate-900 tracking-tight tabular-nums">
-                    {fmtJPY(p.calc.total)}
+                  <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                    <span>Cost Structure</span>
+                    <span>固定費率: {((p.st.fixed / p.st.total) * 100).toFixed(0)}%</span>
                   </div>
-                  <div className="text-xs font-bold mt-1 flex justify-between">
-                    <span className="text-slate-400">{isBase ? "基準プラン" : `${fmtJPY(diff)} 増`}</span>
-                    <span className="text-slate-500">(税込)</span>
-                  </div>
+                  <CostStructureBar st={p.st} max={maxStTotal} />
                 </div>
 
-                <div className="space-y-3 pt-4 border-t border-slate-100">
-                  <div>
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Risk & Scope</div>
-                    <p className="text-xs text-slate-700 leading-relaxed font-medium">{p.spec.risk}</p>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Description</div>
-                    <p className="text-xs text-slate-500 leading-relaxed">{p.spec.desc}</p>
-                  </div>
-                </div>
+                <p className="text-xs text-slate-600 leading-relaxed border-t border-slate-100 pt-3">
+                  {p.meta.desc}
+                </p>
               </div>
             );
           })}
         </div>
       </section>
 
-      {/* 2. コスト構造分析 */}
-      <section className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-        <div className="flex justify-between items-end mb-6 border-b border-slate-100 pb-4">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">2. コスト構造の分解（CQPIK要因分析）</h2>
-            <p className="text-xs text-slate-500 mt-1">
-              見積金額（税抜）を「固定費」「基礎」「仕様加算」「品質係数コスト」に分解。
-            </p>
-          </div>
-          <div className="flex gap-4 text-[10px] text-slate-600">
-            <div className="flex items-center gap-1.5"><span className="w-3 h-3 bg-blue-500 rounded-sm"/>基礎工程(Base)</div>
-            <div className="flex items-center gap-1.5"><span className="w-3 h-3 bg-cyan-400 rounded-sm"/>仕様加算(Adder)</div>
-            <div className="flex items-center gap-1.5"><span className="w-3 h-3 bg-rose-400 rounded-sm"/>品質係数(Factor)</div>
-            <div className="flex items-center gap-1.5"><span className="w-3 h-3 bg-slate-500 rounded-sm"/>固定費(Fixed)</div>
+      {/* 2. 明細比較テーブル (Detail Breakdown) */}
+      <section className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+        <div className="flex justify-between items-end mb-4 border-b border-slate-100 pb-2">
+          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <span>🔎</span> 明細別コスト構造・係数分析
+          </h2>
+          <div className="text-xs text-slate-500 flex gap-4">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 bg-slate-400 rounded-full"/> 基礎</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 bg-sky-400 rounded-full"/> 仕様</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 bg-indigo-500 rounded-full"/> 係数(Quality)</span>
           </div>
         </div>
 
-        <div className="space-y-6">
-          {plans.map((p) => (
-            <div key={p.tier} className="grid grid-cols-12 gap-4 items-center">
-              <div className="col-span-2 text-right">
-                <div className={`font-bold text-sm ${p.spec.color}`}>{p.spec.label}</div>
-                <div className="text-[10px] text-slate-400">Total: {fmtJPY(p.structure.total)}</div>
-              </div>
-              <div className="col-span-10">
-                <CostBar structure={p.structure} maxTotal={maxStructTotal} />
-                <div className="flex justify-between mt-1 text-[9px] text-slate-400 font-mono px-1">
-                  <span>Factor Cost: {fmtJPY(p.structure.qualityCost)}</span>
-                  <span>Fixed: {fmtJPY(p.structure.fixed)}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* 3. 詳細明細比較 */}
-      <section className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-        <h2 className="text-lg font-bold text-slate-900 mb-4 border-b border-slate-100 pb-2">3. 作業項目別 明細比較（L3）</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-300">
-                <th className="py-2 px-4 w-10"></th>
-                <th className="py-2 px-3">作業項目</th>
-                <th className="py-2 px-2 text-right">数量</th>
-                <th className="py-2 px-2 text-right bg-emerald-50 text-emerald-800 border-l border-white">Eco 単価</th>
-                <th className="py-2 px-2 text-right bg-blue-50 text-blue-800 border-l border-white">Std 単価</th>
-                <th className="py-2 px-2 text-right bg-rose-50 text-rose-800 border-l border-white">Pre 単価</th>
-                <th className="py-2 px-2 text-right bg-emerald-50 text-emerald-800 border-l border-white">Eco 総額</th>
-                <th className="py-2 px-2 text-right bg-blue-50 text-blue-800 border-l border-white">Std 総額</th>
-                <th className="py-2 px-2 text-right bg-rose-50 text-rose-800 border-l border-white">Pre 総額</th>
+            <thead className="bg-slate-800 text-white">
+              <tr>
+                <th className="p-3 w-64 rounded-tl-lg">作業項目 / プラン</th>
+                <th className="p-3 w-20 text-right">数量</th>
+                <th className="p-3 w-24 text-right">単価</th>
+                <th className="p-3 w-32 text-right">金額</th>
+                <th className="p-3">単価構造 (Base + Adder + Factor) & 係数内訳 (C/Q/P/I/K)</th>
+                <th className="p-3 w-16 text-center rounded-tr-lg">上限</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-200 border-x border-b border-slate-200">
               {data.workItems.map((w) => {
-                const isOpen = expandedRows.has(w.id);
+                // 行ごとの3プラン計算
                 const rows = plans.map(p => {
-                  const bd = computeUnitPrice(p.tier, p.spec.inspection, w);
-                  return { unitPrice: bd.finalUnitPrice, amount: bd.finalUnitPrice * w.qty };
+                  const bd = computeUnitPrice(p.tier, p.meta.inspection, w, data);
+                  return { p, bd, amount: bd.finalUnitPrice * w.qty };
                 });
+                
+                // グラフ用の最大単価
+                const maxPrice = Math.max(...rows.map(r => r.bd.finalUnitPrice));
 
                 return (
-                  <>
-                    <tr 
-                      key={w.id} 
-                      onClick={() => toggleRow(w.id)}
-                      className={`cursor-pointer transition-colors hover:bg-slate-50 ${isOpen ? "bg-slate-50" : ""}`}
-                    >
-                      <td className="py-2 px-4 text-center text-slate-400">{isOpen ? "▼" : "▶"}</td>
-                      <td className="py-2 px-3 align-top">
-                        <div className="font-bold text-slate-800">{w.title}</div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">
-                          {sizeLabel(w.sizeClass)} / {colorModeLabel(w.colorSpace)} / {dpiLabel(w.resolution)}
+                  <tr key={w.id} className="group hover:bg-slate-50 transition-colors">
+                    {/* 作業項目名 (RowSpan的に表示するため、最初のプラン行でセル結合風に見せる工夫もできるが、今回はグリッドレイアウトで制御) */}
+                    <td colSpan={6} className="p-0">
+                      <div className="border-t border-slate-200">
+                        {/* 項目ヘッダー行 */}
+                        <div className="bg-slate-100 px-3 py-2 font-bold text-slate-800 flex justify-between items-center">
+                          <span>{w.title}</span>
+                          <span className="text-[10px] font-normal text-slate-500">
+                            {sizeLabel(w.sizeClass)} / {dpiLabel(w.resolution)} / {colorModeLabel(w.colorSpace)} / {w.fileFormats.join(",")}
+                          </span>
                         </div>
-                      </td>
-                      <td className="py-2 px-2 text-right tabular-nums text-slate-600 align-top">
-                        {w.qty.toLocaleString()}<span className="text-[10px] ml-0.5">{w.unit}</span>
-                      </td>
-                      
-                      <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 bg-emerald-50/10 align-top">{fmtJPY(rows[0].unitPrice)}</td>
-                      <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 bg-blue-50/10 font-bold align-top">{fmtJPY(rows[1].unitPrice)}</td>
-                      <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 bg-rose-50/10 align-top">{fmtJPY(rows[2].unitPrice)}</td>
+                        
+                        {/* プランごとの詳細行 */}
+                        {rows.map((r, idx) => {
+                          const { p, bd, amount } = r;
+                          // 構成比
+                          const pctBase = (bd.base / maxPrice) * 100;
+                          const pctAdder = ((bd.sizeAdder + bd.formatAdder) / maxPrice) * 100;
+                          const pctFactor = ((bd.unitPrice - bd.base - bd.sizeAdder - bd.formatAdder) / maxPrice) * 100;
+                          
+                          // 背景色
+                          const rowBg = p.tier === "premium" ? "bg-rose-50/30" : p.tier === "standard" ? "bg-blue-50/30" : "bg-emerald-50/30";
+                          const labelColor = p.tier === "premium" ? "text-rose-700" : p.tier === "standard" ? "text-blue-700" : "text-emerald-700";
 
-                      <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 text-slate-500 align-top">{fmtJPY(rows[0].amount)}</td>
-                      <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 text-slate-900 font-bold align-top">{fmtJPY(rows[1].amount)}</td>
-                      <td className="py-2 px-2 text-right tabular-nums border-l border-slate-100 text-slate-500 align-top">{fmtJPY(rows[2].amount)}</td>
-                    </tr>
-                    
-                    {isOpen && (
-                      <tr>
-                        <td colSpan={9} className="px-4 pb-4 bg-slate-50 border-b border-slate-200">
-                          <DetailBreakdownTable item={w} plans={plans} />
-                        </td>
-                      </tr>
-                    )}
-                  </>
+                          return (
+                            <div key={p.tier} className={`flex items-center border-b border-slate-100 last:border-0 ${rowBg} py-2`}>
+                              {/* プラン名 */}
+                              <div className={`w-64 px-3 font-bold ${labelColor} flex items-center gap-2`}>
+                                <div className={`w-2 h-2 rounded-full ${p.tier === "premium" ? "bg-rose-500" : p.tier === "standard" ? "bg-blue-500" : "bg-emerald-500"}`} />
+                                {p.meta.label}
+                              </div>
+                              
+                              {/* 数量 */}
+                              <div className="w-20 px-3 text-right text-slate-500 tabular-nums">
+                                {idx === 0 ? w.qty.toLocaleString() : "〃"}
+                              </div>
+
+                              {/* 単価 */}
+                              <div className="w-24 px-3 text-right font-bold tabular-nums">
+                                {fmtJPY(bd.unitPrice)}
+                              </div>
+
+                              {/* 金額 */}
+                              <div className="w-32 px-3 text-right font-bold tabular-nums text-slate-800">
+                                {fmtJPY(amount)}
+                              </div>
+
+                              {/* グラフ & 係数詳細 */}
+                              <div className="flex-1 px-3">
+                                {/* Bar */}
+                                <div className="h-2 w-full bg-slate-200/50 rounded-full overflow-hidden flex mb-1.5">
+                                  <div style={{ width: `${pctBase}%` }} className="bg-slate-400" />
+                                  <div style={{ width: `${pctAdder}%` }} className="bg-sky-400" />
+                                  <div style={{ width: `${pctFactor}%` }} className="bg-indigo-500" />
+                                </div>
+                                {/* Factors */}
+                                <div className="flex gap-1.5 opacity-80">
+                                  <FactorBadge label="C" val={bd.factors.c} />
+                                  <FactorBadge label="Q" val={bd.factors.q} />
+                                  <FactorBadge label="P" val={bd.factors.p} />
+                                  <FactorBadge label="I" val={bd.factors.i} />
+                                  <FactorBadge label="K" val={bd.factors.k} />
+                                  <span className="text-[9px] text-slate-400 ml-1">
+                                    Raw:{bd.factors.raw.toFixed(2)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* シーリング警告 */}
+                              <div className="w-16 px-3 text-center">
+                                {bd.factors.raw > bd.factors.capped && (
+                                  <span className="text-[10px] font-bold text-white bg-rose-500 px-1.5 py-0.5 rounded" title={`上限適用: Raw ${bd.factors.raw.toFixed(2)} -> Cap ${bd.factors.capped}`}>
+                                    CAP
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </td>
+                  </tr>
                 );
               })}
             </tbody>
           </table>
+        </div>
+        <div className="mt-2 text-[10px] text-slate-400 text-right">
+          ※ 係数記号: C(Condition/原本), Q(Quality/品質), P(Process/工程), I(Interaction/複合), K(K_load/繁忙)
         </div>
       </section>
     </div>

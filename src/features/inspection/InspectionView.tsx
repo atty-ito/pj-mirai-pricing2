@@ -65,7 +65,7 @@ export function InspectionView({ data }: Props) {
       </div>
 
       <div className="mb-6">
-        <div className="text-sm font-bold mb-2">2. 共通検査項目（全行程共通）</div>
+        <div className="text-sm font-bold mb-2">2. 共通検査項目</div>
         <table className="w-full text-xs border-collapse border border-slate-400">
           <thead className="bg-slate-100">
             <tr>
@@ -106,7 +106,7 @@ export function InspectionView({ data }: Props) {
                     <div>サイズ: {sizeLabel(w.sizeClass)}</div>
                     <div>解像度: {dpiLabel(w.resolution)}</div>
                     <div>色空間: {colorModeLabel(w.colorSpace)}</div>
-                    <div>形式: {w.fileFormats.join(", ")}</div>
+                    <div>形式: {[...w.fileFormats, w.fileFormatsFree].filter(Boolean).join(", ")}</div>
                     {data.ocr && <div>OCR: あり ({data.ocrProofread ? "校正済" : "未校正"})</div>}
                     {w.fragile && <div className="text-rose-600 font-bold">※脆弱資料</div>}
                   </div>

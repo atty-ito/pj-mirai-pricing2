@@ -1,4 +1,4 @@
-import { INSPECTION_LEVELS, COLOR_OPTS, RESOLUTIONS } from "../constants/coefficients";
+import { INSPECTION_LEVELS, COLOR_OPTS, RESOLUTIONS, SPEC_PROFILES } from "../constants/coefficients";
 
 // ------------------------------------------------------------------
 // 基本定義
@@ -9,12 +9,15 @@ export type Tier = "premium" | "standard" | "economy";
 export type InspectionLevel = (typeof INSPECTION_LEVELS)[number];
 export type ColorMode = (typeof COLOR_OPTS)[number];
 export type Dpi = (typeof RESOLUTIONS)[number];
+export type SpecProfile = (typeof SPEC_PROFILES)[number]["value"];
 
 export const SERVICE_TYPES_KEYS = ["A", "A2", "B", "C", "D", "E", "F"] as const;
 export type ServiceCode = (typeof SERVICE_TYPES_KEYS)[number];
 
 export const SIZE_CLASS_KEYS = ["A4以下", "A4/B5", "A3", "B4", "A2", "A2以上", "B2", "A1", "B3", "A0", "A0/長尺", "図面特大"] as const;
 export type SizeClass = (typeof SIZE_CLASS_KEYS)[number];
+
+export type FileFormat = "TIFF" | "PDF" | "PDF/A" | "JPG" | "JPEG" | "JPEG2000" | "マルチPDF" | "TXT" | "XML" | "その他";
 
 // ------------------------------------------------------------------
 // データ型定義
@@ -28,8 +31,9 @@ export type WorkItem = {
   unit: string;
   sizeClass: SizeClass;
   resolution: Dpi;
-  colorSpace: ColorMode; // colorMode -> colorSpace
-  fileFormats: string[];
+  colorSpace: ColorMode;
+  fileFormats: FileFormat[]; // 複数選択可
+  fileFormatsFree: string;   // 形式の自由入力欄
   notes: string;
 
   // 係数C（Condition）に関わる原本状態フラグ
@@ -39,15 +43,16 @@ export type WorkItem = {
   requiresNonContact: boolean;
 };
 
+// 自由入力の実費行
 export type MiscExpense = {
   id: string;
   label: string;
   qty: number;
   unit: string;
-  unitPrice: number;
-  amount: number;
+  unitPrice: number; // 市場価格（税込）を入力
+  amount: number;    // 計算結果
   note?: string;
-  calcType: "manual" | "expense";
+  calcType: "manual" | "expense"; // expenseの場合、(市場価格 * 1.3) or (規定単価) の高い方を採用
 };
 
 export type Data = {
@@ -73,10 +78,14 @@ export type Data = {
 
   contractExists: boolean;
   meetingMemoExists: boolean;
+  
+  // 仕様書関連
+  specProfile: SpecProfile; // 仕様レベル
+  specProvidedByClient: boolean; // 仕様書支給有無
   specStandard: boolean;
   privacyFlag: boolean;
   
-  notes: string; // ★復活（全体備考）
+  notes: string;
 
   // L2: 運用条件・輸送
   workLocation: "社内（高セキュリティ施設）" | "現地（出張）" | "外部委託（要承認）";
@@ -103,8 +112,12 @@ export type Data = {
   trimming: string;
   binaryConversion: boolean;
   binaryThreshold: string;
+  
+  // OCR
   ocr: boolean;
   ocrProofread: boolean;
+
+  // メタデータ
   namingRule: "連番のみ" | "フォルダ名のみ" | "ファイル名（背文字）" | "ファイル名（完全手入力）" | "特殊命名規則";
   folderStructure: string;
   indexType: "なし" | "索引データ（Excel）" | "TSV（UTF-8 BOMなし）";
@@ -145,6 +158,7 @@ export type Data = {
   
   // UI制御
   includeQuotation: boolean;
+  includePriceRationalePage: boolean; // ★追加: エラー原因だった箇所
   includeSpecDoc: boolean;
   includeInstructionDoc: boolean;
   includeInspectionDoc: boolean;

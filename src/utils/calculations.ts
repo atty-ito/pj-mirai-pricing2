@@ -1,10 +1,11 @@
-import { Data, WorkItem, Tier, ServiceCode } from "../types/pricing";
+import { Data, WorkItem, Tier, ServiceCode, MiscExpense } from "../types/pricing";
 import { 
   SERVICE_DEFINITIONS, 
   SIZE_ADDERS, 
   FORMAT_ADDERS, 
   METADATA_UNIT_PRICES, 
-  BASE_FEE_THRESHOLDS 
+  BASE_FEE_THRESHOLDS,
+  STANDARD_FIXED_COSTS
 } from "../constants/coefficients";
 import { toInt } from "./formatters";
 
@@ -13,13 +14,8 @@ import { toInt } from "./formatters";
 // ------------------------------------------------------------------
 
 export type FactorBreakdown = {
-  c: number;
-  q: number;
-  p: number;
-  i: number;
-  k: number;
-  raw: number;
-  capped: number;
+  c: number; q: number; p: number; i: number; k: number;
+  raw: number; capped: number;
 };
 
 export type UnitPriceBreakdown = {
@@ -28,9 +24,9 @@ export type UnitPriceBreakdown = {
   sizeAdder: number;
   formatAdder: number;
   unitPrice: number;
-  subtotal: number; // base * factor + adders
-  finalUnitPrice: number; // same as unitPrice, alias for compatibility
-  inspectionMultiplier: number; // 互換性のため残す（CQPIKではQに含まれる）
+  subtotal: number;
+  finalUnitPrice: number;
+  inspectionMultiplier: number;
 };
 
 export type LineItem = {
@@ -67,7 +63,6 @@ export function getBaseUnit(service: ServiceCode, tier: Tier): number {
   return def.min;
 }
 
-// 他のファイルから使えるようにエクスポート
 export function factorC(item: WorkItem): number {
   let c = 1.0;
   if (item.fragile) c += 0.2;
@@ -80,7 +75,6 @@ export function factorC(item: WorkItem): number {
 export function factorQ(item: WorkItem, inspectionLevel: string): number {
   let q = 1.0;
   const res = String(item.resolution);
-  
   if (res.includes("600")) q += 0.75;
   else if (res.includes("400")) q += 0.5;
   else if (res.includes("300")) q += 0.2;
@@ -96,7 +90,8 @@ export function factorP(data: Data): number {
   let p = 1.0;
   if (data.tempHumidLog) p += 0.1;
   if (data.fumigation) p += 0.1;
-  if (data.ocr) p += 0.15;
+  // OCRは標準になったため、P係数への影響は「校正」のみ大きくする
+  if (data.ocr) p += 0.05; 
   if (data.ocrProofread) p += 0.25;
   if (data.namingRule === "ファイル名（完全手入力）") p += 0.1;
   if (data.indexType !== "なし") p += 0.05;
@@ -118,7 +113,7 @@ export function factorInteraction(item: WorkItem, data: Data): number {
 }
 
 export function factorKLoad(data: Data): number {
-  const k = Math.max(0, Math.min(20, toInt(data.kLoadPct)));
+  const k = Math.max(0, Math.min(50, toInt(data.kLoadPct)));
   return 1.0 + k / 100;
 }
 
@@ -127,23 +122,30 @@ export function applyFactorCap(m: number, data: Data): number {
   return Math.min(m, cap);
 }
 
-// ★ 単価計算の個別関数（CompareViewで使用）
+// ------------------------------------------------------------------
+// メイン計算関数
+// ------------------------------------------------------------------
+
 export function computeUnitPrice(tier: Tier, inspectionLevel: string, w: WorkItem, dataMock?: Partial<Data>): UnitPriceBreakdown {
-  // dataMockがなければデフォルト値を使う簡易版として動作させる
   const data: Data = {
     ...dataMock,
     tier,
     inspectionLevel: inspectionLevel as any,
-    // 必須項目のダミー
     kLoadPct: dataMock?.kLoadPct ?? 0,
     factorCap: dataMock?.factorCap ?? 2.2,
     capExceptionApproved: dataMock?.capExceptionApproved ?? false,
-    tempHumidLog: false, fumigation: false, ocr: false, ocrProofread: false,
-    namingRule: "連番のみ", indexType: "なし"
+    tempHumidLog: dataMock?.tempHumidLog ?? false, 
+    fumigation: dataMock?.fumigation ?? false, 
+    ocr: dataMock?.ocr ?? true, 
+    ocrProofread: dataMock?.ocrProofread ?? false,
+    namingRule: dataMock?.namingRule ?? "連番のみ", 
+    indexType: dataMock?.indexType ?? "なし"
   } as Data;
 
   const base = getBaseUnit(w.service, tier);
   const sizeAdder = SIZE_ADDERS[w.sizeClass] ?? 0;
+  
+  // 形式加算（配列対応）
   const fmtAdder = (w.fileFormats || []).reduce(
     (sum, f) => sum + (FORMAT_ADDERS[f] ?? 0), 0
   );
@@ -165,15 +167,11 @@ export function computeUnitPrice(tier: Tier, inspectionLevel: string, w: WorkIte
     sizeAdder,
     formatAdder: fmtAdder,
     unitPrice,
-    subtotal: unitPrice, // 互換性
-    finalUnitPrice: unitPrice, // 互換性
-    inspectionMultiplier: q // Q係数を代用
+    subtotal: unitPrice,
+    finalUnitPrice: unitPrice,
+    inspectionMultiplier: q
   };
 }
-
-// ------------------------------------------------------------------
-// メイン計算関数
-// ------------------------------------------------------------------
 
 export function computeCalc(data: Data): CalcResult {
   const lineItems: LineItem[] = [];
@@ -181,6 +179,7 @@ export function computeCalc(data: Data): CalcResult {
 
   let totalVol = 0;
 
+  // L3: 業務項目
   for (const w of data.workItems) {
     const qty = toInt(w.qty);
     totalVol += qty;
@@ -192,11 +191,14 @@ export function computeCalc(data: Data): CalcResult {
     const serviceName = SERVICE_DEFINITIONS[w.service]?.name || w.service;
     const explain = `Base(${bd.base})×Factor(${bd.factors.capped.toFixed(2)}) + Adders(${bd.sizeAdder + bd.formatAdder})`;
     
+    // 形式表示（自由入力含む）
+    const formatStr = [...(w.fileFormats || []), w.fileFormatsFree].filter(Boolean).join("・");
+
     lineItems.push({
       id: `L3-${w.id}`,
       phase: "L3",
       name: w.title,
-      spec: `${serviceName} / ${w.sizeClass} / ${w.resolution} / ${w.colorSpace}`,
+      spec: `${serviceName}\nサイズ: ${w.sizeClass} / 解像度: ${w.resolution} / 色: ${w.colorSpace} / 形式: ${formatStr}`,
       qty,
       unit: w.unit,
       unitPrice: bd.unitPrice,
@@ -208,18 +210,45 @@ export function computeCalc(data: Data): CalcResult {
     addProcessLineItems(lineItems, w, data, qty);
   }
 
+  // L1, L2, L5: 固定費・納品・その他
   addFixedLineItems(lineItems, data, totalVol);
 
+  // Misc: 特殊工程・実費
+  // ここでHDD等の単価比較ロジックを適用
   for (const m of data.miscExpenses) {
-    let up = toInt(m.unitPrice);
-    if (m.calcType === "expense") up = Math.round(up * 1.3);
-    const amt = up * toInt(m.qty);
+    let finalUnitPrice = toInt(m.unitPrice);
+    let explain = "手入力";
+
+    if (m.calcType === "expense") {
+      // 市場価格の30%乗せ
+      const withMarkup = Math.round(finalUnitPrice * 1.3);
+      
+      // 納品媒体（HDD/SSD）の場合の特別ロジック
+      // 項目名に"HDD"や"SSD"が含まれていれば、標準固定単価と比較して高い方を採用
+      if (m.label.toUpperCase().includes("HDD") || m.label.toUpperCase().includes("SSD")) {
+        const stdPrice = STANDARD_FIXED_COSTS.HDD;
+        if (withMarkup > stdPrice) {
+          finalUnitPrice = withMarkup;
+          explain = `実費+30%適用 (標準単価 ${stdPrice} < 算出単価 ${withMarkup})`;
+        } else {
+          finalUnitPrice = stdPrice;
+          explain = `標準単価適用 (標準単価 ${stdPrice} > 算出単価 ${withMarkup})`;
+        }
+      } else {
+        // その他の実費
+        finalUnitPrice = withMarkup;
+        explain = "実費 + 30%諸経費";
+      }
+    }
+
+    const amt = finalUnitPrice * toInt(m.qty);
     lineItems.push({
       id: m.id, phase: "Misc", name: m.label, spec: m.note || "",
-      qty: toInt(m.qty), unit: m.unit, unitPrice: up, amount: amt, explain: "自由入力", kind: "misc"
+      qty: toInt(m.qty), unit: m.unit, unitPrice: finalUnitPrice, amount: amt, explain, kind: "misc"
     });
   }
 
+  // フェーズ順ソート
   const phaseOrder: Record<string, number> = { L1: 1, L2: 2, L3: 3, L4: 4, L5: 5, Misc: 6 };
   lineItems.sort((a, b) => (phaseOrder[a.phase] || 99) - (phaseOrder[b.phase] || 99));
 
@@ -235,10 +264,16 @@ function addProcessLineItems(lines: LineItem[], w: WorkItem, data: Data, vol: nu
     let u = 10;
     if (data.namingRule.includes("ファイル名")) u = 30;
     if (data.namingRule.includes("特殊")) u = 50;
-    lines.push(createLine(`L4-NAME-${w.id}`, "L4", "メタデータ付与", data.namingRule, vol, w.unit, u));
+    lines.push(createLine(`L4-NAME-${w.id}`, "L4", "メタデータ付与", `規則: ${data.namingRule}`, vol, w.unit, u));
   }
-  if (data.ocr) lines.push(createLine(`L4-OCR-${w.id}`, "L4", "OCR処理", "機械処理", vol, w.unit, 5));
-  if (data.ocrProofread) lines.push(createLine(`L4-OCRP-${w.id}`, "L4", "OCR校正", "目視確認", vol, w.unit, 20));
+  // OCRは常に表示、校正有無で単価変動
+  if (data.ocr) {
+    if (data.ocrProofread) {
+      lines.push(createLine(`L4-OCRP-${w.id}`, "L4", "OCR処理 (校正あり)", "高精度校正", vol, w.unit, 20));
+    } else {
+      lines.push(createLine(`L4-OCR-${w.id}`, "L4", "OCR処理 (校正なし)", "機械処理のみ", vol, w.unit, 5));
+    }
+  }
 }
 
 function addFixedLineItems(lines: LineItem[], data: Data, totalVol: number) {
@@ -246,24 +281,58 @@ function addFixedLineItems(lines: LineItem[], data: Data, totalVol: number) {
   for (const t of BASE_FEE_THRESHOLDS) {
     if (totalVol <= t.limit) { baseFee = t.fee; break; }
   }
-  lines.push(createLine("F-BASE", "L1", "基本料金", "PM費", 1, "式", baseFee));
-  lines.push(createLine("L1-SOW", "L1", "要件定義", "仕様策定", 1, "式", 15000));
+  lines.push(createLine("F-BASE", "L1", "基本料金", "PM費・工程設計費", 1, "式", baseFee));
   
+  // 要件定義費（L1）
+  lines.push(createLine("L1-SOW", "L1", "要件定義・仕様策定", "仕様書作成・合意形成", 1, "式", 15000));
+  
+  // 搬送費（L2）
   const dist = toInt(data.transportDistanceKm);
   const trips = Math.max(1, toInt(data.transportTrips));
-  const perKm = data.shippingType.includes("セキュリティ") ? 500 : 120;
-  const baseTrans = data.shippingType.includes("セキュリティ") ? 30000 : 5000;
-  lines.push(createLine("L2-TRANS", "L2", `搬送(${data.shippingType})`, `${dist}km x ${trips}回`, trips, "往復", baseTrans + dist * perKm));
+  let perKm = 120;
+  let baseTrans = 5000;
+  
+  if (data.shippingType === "セキュリティ専用便") { baseTrans = 30000; perKm = 500; }
+  else if (data.shippingType === "専用便") { baseTrans = 10000; perKm = 250; }
+  else if (data.shippingType === "特殊セキュリティカー") { baseTrans = 60000; perKm = 800; }
+  
+  const transPrice = baseTrans + (dist * perKm);
+  lines.push(createLine("L2-TRANS", "L2", `搬送費 (${data.shippingType})`, `距離${dist}km × 往復${trips}回`, trips, "往復", transPrice));
 
-  if (data.strictCheckIn) lines.push(createLine("L2-CHK", "L2", "厳格照合", "リスト突合", 1, "式", 10000));
-  if (data.fumigation) lines.push(createLine("L2-FUMI", "L2", "燻蒸", "密閉処理", 1, "式", 20000));
-  if (data.tempHumidLog) lines.push(createLine("L4-ENV", "L4", "環境ログ", "温湿度記録", 1, "式", 10000));
+  if (data.strictCheckIn) lines.push(createLine("L2-CHK", "L2", "厳格照合・受領記録", "リスト突合・借用書作成", 1, "式", 10000));
+  if (data.fumigation) lines.push(createLine("L2-FUMI", "L2", "燻蒸処理", "密閉環境・殺虫殺菌", 1, "式", STANDARD_FIXED_COSTS.FUMIGATION));
+  if (data.tempHumidLog) lines.push(createLine("L4-ENV", "L4", "環境モニタリング", "温湿度ログ提出 (60分間隔)", 1, "式", 10000));
+  
+  // 納品媒体（L5）: MiscExpenseで入力されたものは重複計上しないよう、ここでは自動計算分を「標準」として追加
+  // ただし、MiscExpenseを使わずにチェックボックスだけで選んだ場合のロジックが必要
+  // 今回の要件では「実費入力させる」ため、自動計上はDVD/BDなどの光学メディアのみ残し、HDDはMiscExpense推奨とするか、
+  // あるいはここで計上し、InputViewで制御するか。
+  // → シンプルに、Checkboxで選ばれたものは「標準単価」で計上する。
+  // MiscExpenseで「HDD」が入力された場合は、そちらが優先される（二重計上になるため、運用でCheckboxを外すか、ここで判定する）。
+  // ここでは「CheckboxがON」かつ「MiscExpenseに同種がない」場合のみ追加するロジックにする。
   
   const mediaCount = Math.max(1, toInt(data.mediaCount));
+  const miscLabels = data.miscExpenses.map(m => m.label.toUpperCase());
+
   data.deliveryMedia.forEach(m => {
-    if (m === "HDD/SSD") lines.push(createLine("L5-HDD", "L5", "納品媒体(HDD)", "暗号化込", mediaCount, "台", 20000));
-    else lines.push(createLine("L5-DISK", "L5", `納品媒体(${m})`, "書込検証", mediaCount, "枚", 6000));
+    // MiscExpenseに同等のものが含まれていればスキップ（二重計上防止）
+    const isHdd = m.includes("HDD") || m.includes("SSD");
+    const hasManualEntry = miscLabels.some(l => isHdd ? (l.includes("HDD") || l.includes("SSD")) : l.includes(m.toUpperCase()));
+
+    if (!hasManualEntry) {
+      if (isHdd) {
+        lines.push(createLine("L5-HDD", "L5", "納品用HDD/SSD (標準)", "調達・暗号化・検査込", mediaCount, "台", STANDARD_FIXED_COSTS.HDD));
+      } else if (m.includes("DVD")) {
+        lines.push(createLine("L5-DVD", "L5", "納品用DVD-R", "検証・冗長化", mediaCount, "枚", STANDARD_FIXED_COSTS.DVDR));
+      } else if (m.includes("BD")) {
+        lines.push(createLine("L5-BDR", "L5", "納品用BD-R", "検証・冗長化", mediaCount, "枚", STANDARD_FIXED_COSTS.BDR));
+      }
+    }
   });
+
+  if (data.labelPrint) {
+    lines.push(createLine("L5-LABEL", "L5", "媒体ラベル印字", "管理番号印字", mediaCount, "枚", STANDARD_FIXED_COSTS.LABEL));
+  }
 }
 
 function createLine(id: string, phase: LineItem["phase"], name: string, spec: string, qty: number, unit: string, unitPrice: number): LineItem {

@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect, useRef, ChangeEvent, FormEvent } from "react";
-import { Data, WorkItem, Tier, ViewKey } from "./types/pricing";
+import { Data, WorkItem, Tier, ViewKey } from "./types/pricing"; // ★修正: WorkItemを追加
 import { computeCalc } from "./utils/calculations";
 import { suggestQuotationNo, suggestInspectionReportNo, uid } from "./utils/formatters";
-import { ISSUER, SYSTEM_NAME } from "./constants/coefficients";
+import { ISSUER, SYSTEM_NAME, APP_VERSION } from "./constants/coefficients";
 
 import { Sidebar } from "./components/layout/Sidebar";
 import { PrintStyles } from "./components/layout/PrintStyles";
@@ -13,11 +13,10 @@ import { InspectionView } from "./features/inspection/InspectionView";
 import { SpecView } from "./features/spec/SpecView";
 import { CompareView } from "./features/compare/CompareView";
 
-// ---- グラフィカルなログイン画面 ----
+// ---- ログイン画面 ----
 function LoginView({ onLogin }: { onLogin: () => void }) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
-  const [isFocus, setIsFocus] = useState(false);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -32,61 +31,36 @@ function LoginView({ onLogin }: { onLogin: () => void }) {
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-slate-900 relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-[#0f172a] to-[#1e1b4b]" />
-      <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] bg-indigo-600/20 rounded-full blur-[100px] animate-pulse" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] bg-blue-600/20 rounded-full blur-[100px] animate-pulse" style={{ animationDelay: "2s" }} />
-
       <div className="relative z-10 w-full max-w-sm mx-4">
         <div className="bg-white/10 backdrop-blur-md border border-white/10 rounded-3xl shadow-2xl p-8 overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-white/30 to-transparent" />
-
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-lg mb-4">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-8 h-8 text-white">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-white">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" />
               </svg>
             </div>
-            <h1 className="text-2xl font-black text-white tracking-tight drop-shadow-md">{SYSTEM_NAME}</h1>
+            <h1 className="text-xl font-black text-white tracking-tight drop-shadow-md">{SYSTEM_NAME}</h1>
             <p className="text-xs text-slate-300 mt-2 font-medium">Authorized Personnel Only</p>
           </div>
-
           <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="relative">
-              <div className={`absolute inset-0 bg-gradient-to-r from-indigo-500 to-blue-500 rounded-xl blur transition-opacity duration-300 ${isFocus ? 'opacity-100' : 'opacity-0'}`} />
-              <div className="relative bg-slate-900/80 rounded-xl p-1 border border-white/10">
-                <input
-                  type="password"
-                  className="w-full bg-transparent text-white placeholder-slate-500 px-4 py-3 outline-none text-center tracking-widest font-mono text-lg"
-                  placeholder="PASSCODE"
-                  value={pw}
-                  onChange={(e) => { setPw(e.target.value); setErr(""); }}
-                  onFocus={() => setIsFocus(true)}
-                  onBlur={() => setIsFocus(false)}
-                  autoFocus
-                />
-              </div>
-            </div>
-
-            {err && (
-              <div className="text-center text-rose-300 text-xs font-bold animate-shake">
-                ⚠️ {err}
-              </div>
-            )}
-
+            <input
+              type="password"
+              className="w-full bg-slate-900/80 text-white placeholder-slate-500 px-4 py-3 rounded-xl border border-white/10 outline-none text-center tracking-widest font-mono text-lg focus:ring-2 focus:ring-indigo-500"
+              placeholder="PASSCODE"
+              value={pw}
+              onChange={(e) => { setPw(e.target.value); setErr(""); }}
+              autoFocus
+            />
+            {err && <div className="text-center text-rose-300 text-xs font-bold">{err}</div>}
             <button
               type="submit"
-              className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 text-slate-900 font-bold rounded-xl shadow-lg shadow-black/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 group"
+              className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 text-slate-900 font-bold rounded-xl shadow-lg transition-all active:scale-[0.98]"
             >
-              <span>ACCESS SYSTEM</span>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 transition-transform group-hover:translate-x-1">
-                <path fillRule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z" clipRule="evenodd" />
-              </svg>
+              ACCESS SYSTEM
             </button>
           </form>
-
           <div className="mt-8 text-center">
-            <p className="text-[10px] text-slate-400">
-              Secured by KHQ Architecture v24.10
-            </p>
+            <p className="text-[10px] text-slate-400">Secured by KHQ Architecture {APP_VERSION}</p>
           </div>
         </div>
       </div>
@@ -110,47 +84,49 @@ export default function App() {
     setIsAuthenticated(true);
   };
 
-  // 初期データセット
+  // 初期データ（自由学園PDFベース）
   const [data, setData] = useState<Data>(() => ({
     // L1: 基本情報
-    jobNo: "25-001024",
-    createdDate: new Date().toISOString().slice(0, 10),
-    subject: "令和5年度 所蔵資料デジタル化業務委託",
-    customerName: "○○組合長",
-    customerType: "官公庁・自治体",
-    jurisdiction: "総務課 契約担当",
-    contactName: "○○ ○○",
-    contactTel: "00-0000-0000",
+    jobNo: "250520001",
+    createdDate: "2025-05-20",
+    subject: "資料室所蔵史料のデジタル化業務",
+    customerName: "学校法人○○学園",
+    customerType: "大学・研究機関",
+    jurisdiction: "資料室",
+    contactName: "ご担当者 ○○",
+    contactTel: "03-0000-0000",
     qualityManager: "高橋 幸一",
     salesManager: "一木",
     supervisorCert: "文書情報管理士1級",
     
-    deadline: "2026-03-31",
+    deadline: "2025-07-31",
     deadlineType: "絶対納期",
     isExpress: false,
     expressLevel: "通常",
     contractExists: true,
     meetingMemoExists: true,
-    specStandard: true,
-    privacyFlag: true,
     
-    // ★追加: 型定義にある必須プロパティ
-    notes: "",
+    specStandard: true,
+    specProvidedByClient: false,
+    specProfile: "standard",
+    privacyFlag: false,
+    
+    notes: "※経済情勢が極端に変動した場合は除く",
 
     // L2: 運用・輸送
     workLocation: "社内（高セキュリティ施設）",
     strictCheckIn: true,
     checkInListProvided: true,
-    transportDistanceKm: 30,
-    transportTrips: 2,
-    shippingType: "セキュリティ専用便",
-    fumigation: true,
-    tempHumidLog: true,
-    neutralPaperBag: "AFプロテクトH相当",
+    transportDistanceKm: 15,
+    transportTrips: 1,
+    shippingType: "専用便",
+    fumigation: false,
+    tempHumidLog: false,
+    neutralPaperBag: "",
     interleaving: false,
     unbinding: "なし",
     rebind: false,
-    preprocessMemo: "受領時に劣化・汚損の有無を確認し、必要な場合は協議の上で補修を行う。",
+    preprocessMemo: "劣化状態の確認、付箋位置などの情報記録を実施。",
 
     // L4: 画像処理・検査
     inspectionLevel: "標準全数検査 (作業者のみ)",
@@ -160,21 +136,21 @@ export default function App() {
     trimming: "あり (110%)",
     binaryConversion: false,
     binaryThreshold: "固定128",
-    ocr: false,
+    ocr: true,
     ocrProofread: false,
     namingRule: "連番のみ",
-    folderStructure: "Root / 書誌ID / 分冊",
+    folderStructure: "Root / 書誌ID",
     indexType: "索引データ（Excel）",
     lineFeed: "LF",
 
     // L5: 納品
-    deliveryMedia: ["HDD/SSD", "DVD-R"],
+    deliveryMedia: [], 
     mediaCount: 1,
     labelPrint: true,
     longTermStorageMonths: 0,
     dataDeletionProof: true,
     disposal: "なし",
-    deliveryMemo: "納品媒体の暗号化は要望に応じて対応する。",
+    deliveryMemo: "",
 
     // 係数パラメータ
     tier: "standard",
@@ -188,6 +164,7 @@ export default function App() {
     
     // UI制御
     includeQuotation: true,
+    includePriceRationalePage: true, // ★追加: 単価算定根拠
     includeSpecDoc: true,
     includeInstructionDoc: true,
     includeInspectionDoc: true,
@@ -204,49 +181,55 @@ export default function App() {
     inspectionApprover: "",
     inspectionRemarks: "",
 
+    // 作業項目
     workItems: [
       {
         id: uid("w"),
-        service: "C",
-        title: "資料の電子化（見開きA3以内）",
-        qty: 65100,
-        unit: "枚",
+        service: "A",
+        title: "史料(A3サイズ以内)のデジタル化",
+        qty: 1350,
+        unit: "カット",
         sizeClass: "A3",
         resolution: "400dpi",
-        colorSpace: "モノクローム (TIFF/MMR)",
+        colorSpace: "sRGB",
         fileFormats: ["TIFF", "PDF"],
-        notes: "原寸、落丁・乱丁防止、見開き保持。",
+        fileFormatsFree: "",
+        notes: "原寸撮影",
         fragile: true,
-        dismantleAllowed: true,
-        restorationRequired: true,
+        dismantleAllowed: false,
+        restorationRequired: false,
         requiresNonContact: true,
       },
-      {
-        id: uid("w"),
-        service: "D",
-        title: "図面の電子化（A2）",
-        qty: 5,
-        unit: "枚",
-        sizeClass: "A2",
-        resolution: "400dpi",
-        colorSpace: "sRGB",
-        fileFormats: ["TIFF", "JPG"],
-        notes: "折り目・反りの補正、全体図と細部の判読性確保。",
-        fragile: false,
-        dismantleAllowed: true,
-        restorationRequired: false,
-        requiresNonContact: false,
-      },
     ],
-    miscExpenses: [], // 自由入力欄
+    // 実費・特殊工程
+    miscExpenses: [
+      {
+        id: uid("m"),
+        label: "前処理作業（劣化確認・情報記録）",
+        qty: 1,
+        unit: "式",
+        unitPrice: 14400,
+        amount: 14400,
+        note: "劣化状態の確認、付箋位置などの情報記録",
+        calcType: "manual"
+      },
+      {
+        id: uid("m"),
+        label: "納品用SSD 1TB",
+        qty: 1,
+        unit: "台",
+        unitPrice: 16000,
+        amount: 0,
+        note: "納品用メディア",
+        calcType: "expense"
+      }
+    ], 
   }));
 
   const [view, setView] = useState<ViewKey>("input");
 
-  // 見積計算（常時実行）
   const calc = useMemo(() => computeCalc(data), [data]);
 
-  // ID採番の監視
   useEffect(() => {
     setData((prev) => {
       const nextQuotationNo = prev.quotationNo || suggestQuotationNo(prev.createdDate);
@@ -280,6 +263,7 @@ export default function App() {
           resolution: "300dpi",
           colorSpace: "sRGB",
           fileFormats: ["PDF"],
+          fileFormatsFree: "",
           notes: "",
           fragile: false,
           dismantleAllowed: true,
@@ -298,10 +282,24 @@ export default function App() {
     setData((p) => ({ ...p, workItems: p.workItems.map((w) => (w.id === id ? { ...w, ...patch } : w)) }));
   };
 
-  // 互換性維持のためのダミーハンドラ（MiscExpense用）
-  const addMiscExpense = () => {}; 
-  const removeMiscExpense = (id: string) => {};
-  const updateMiscExpense = (id: string, patch: any) => {};
+  const addMiscExpense = () => {
+    setData(p => ({
+      ...p,
+      miscExpenses: [
+        ...p.miscExpenses,
+        { id: uid("m"), label: "", qty: 1, unit: "式", unitPrice: 0, amount: 0, calcType: "manual", note: "" }
+      ]
+    }));
+  }; 
+  const removeMiscExpense = (id: string) => {
+    setData(p => ({ ...p, miscExpenses: p.miscExpenses.filter(m => m.id !== id) }));
+  };
+  const updateMiscExpense = (id: string, patch: any) => {
+    setData(p => ({ 
+      ...p, 
+      miscExpenses: p.miscExpenses.map(m => m.id === id ? { ...m, ...patch } : m) 
+    }));
+  };
 
   // --- 保存・読込ハンドラ ---
   const handleSaveData = () => {
@@ -361,7 +359,9 @@ export default function App() {
         <div className="mb-8 flex items-end justify-between gap-4 no-print border-b border-slate-200 pb-4">
           <div className="flex items-center gap-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white shadow-lg shadow-indigo-200">
-              <span className="text-xl font-black">OS</span>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" />
+              </svg>
             </div>
             <div>
               <h1 className="text-2xl font-black tracking-tight text-slate-900 drop-shadow-sm">{SYSTEM_NAME}</h1>
@@ -372,7 +372,7 @@ export default function App() {
           </div>
           <div className="text-right text-xs text-slate-500">
             <div className="flex items-center justify-end gap-3 mb-1">
-              <div className="px-3 py-1 bg-slate-100 rounded-full font-mono text-slate-600 border border-slate-200">Ver 24.10</div>
+              <div className="px-3 py-1 bg-slate-100 rounded-full font-mono text-slate-600 border border-slate-200">{APP_VERSION}</div>
               <button
                 type="button"
                 onClick={handleSaveData}

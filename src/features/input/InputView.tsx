@@ -1,7 +1,15 @@
-import { Data, WorkItem, Tier, InspectionLevel, ServiceCode, ColorMode, Dpi, SizeClass } from "../../types/pricing";
+import { Data, WorkItem, Tier, ServiceCode, FileFormat, MiscExpense } from "../../types/pricing";
 import { CalcResult } from "../../utils/calculations";
-import { fmtJPY, allocateQuotationNo, toInt } from "../../utils/formatters";
-import { SERVICE_DEFINITIONS, SIZE_ADDERS, RESOLUTIONS, COLOR_OPTS, INSPECTION_LEVELS } from "../../constants/coefficients";
+import { fmtJPY, allocateQuotationNo } from "../../utils/formatters";
+import { 
+  SERVICE_DEFINITIONS, 
+  SIZE_ADDERS, 
+  RESOLUTIONS, 
+  COLOR_OPTS, 
+  INSPECTION_LEVELS,
+  SPEC_PROFILES,
+  FORMAT_ADDERS
+} from "../../constants/coefficients";
 import { Card } from "../../components/common/Card";
 import { TextField } from "../../components/common/TextField";
 import { TextAreaField } from "../../components/common/TextAreaField";
@@ -20,10 +28,14 @@ type Props = {
   updateWorkItem: (id: string, patch: Partial<WorkItem>) => void;
   addMiscExpense: () => void;
   removeMiscExpense: (id: string) => void;
-  updateMiscExpense: (id: string, patch: any) => void;
+  updateMiscExpense: (id: string, patch: Partial<MiscExpense>) => void;
 };
 
-export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, updateWorkItem }: Props) {
+export function InputView({ 
+  data, setData, calc, 
+  addWorkItem, removeWorkItem, updateWorkItem,
+  addMiscExpense, removeMiscExpense, updateMiscExpense 
+}: Props) {
   
   const applyTier = (t: Tier) => {
     setData((p) => {
@@ -35,6 +47,14 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
           : { inspectionLevel: '簡易目視検査 (抜き取り)', tempHumidLog: false, shippingType: '一般宅配', kLoadPct: 0 };
       return { ...p, tier: t, ...base };
     });
+  };
+
+  const toggleFormat = (w: WorkItem, fmt: FileFormat) => {
+    const current = w.fileFormats || [];
+    const next = current.includes(fmt)
+      ? current.filter(f => f !== fmt)
+      : [...current, fmt];
+    updateWorkItem(w.id, { fileFormats: next });
   };
 
   return (
@@ -76,8 +96,8 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
         </div>
       </div>
 
-      {/* L1: 導入・設計 / 基本情報 */}
-      <Card title="L1 基本情報・要件定義" tone="indigo" subtitle="Job No、顧客情報、管理者、納期">
+      {/* L1: 基本情報 */}
+      <Card title="L1 基本情報・要件定義" tone="indigo" subtitle="顧客情報、管理者、納期、仕様書">
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-3">
             <div className="flex items-end gap-1">
@@ -88,7 +108,13 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
             </div>
           </div>
           <div className="col-span-3">
-            <TextField label="発行日" value={data.createdDate} onChange={(v) => setData(p => ({...p, createdDate: v}))} placeholder="YYYY-MM-DD" />
+            <Label>発行日</Label>
+            <input 
+              type="date" 
+              className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
+              value={data.createdDate} 
+              onChange={(e) => setData(p => ({...p, createdDate: e.target.value}))} 
+            />
           </div>
           <div className="col-span-6">
             <TextField label="件名" value={data.subject} onChange={(v) => setData(p => ({...p, subject: v}))} />
@@ -119,7 +145,13 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
 
           <div className="col-span-12 mt-2 pt-4 border-t border-indigo-100 grid grid-cols-12 gap-4 bg-indigo-50/50 p-3 rounded-lg">
             <div className="col-span-3">
-              <TextField label="納期" value={data.deadline} onChange={(v) => setData(p => ({...p, deadline: v}))} placeholder="YYYY-MM-DD" />
+              <Label>納期</Label>
+              <input 
+                type="date" 
+                className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
+                value={data.deadline} 
+                onChange={(e) => setData(p => ({...p, deadline: e.target.value}))} 
+              />
             </div>
             <div className="col-span-3">
               <SelectField label="納期種別" value={data.deadlineType} onChange={(v) => setData(p => ({...p, deadlineType: v as any}))} options={[{value:"絶対納期",label:"絶対納期"},{value:"目標納期",label:"目標納期"}]} />
@@ -139,11 +171,28 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
             </div>
           </div>
 
-          <div className="col-span-12 flex gap-4 mt-2">
-            <Checkbox label="仕様書（公的規格準拠）" checked={data.specStandard} onChange={(v) => setData(p => ({...p, specStandard: v}))} />
-            <Checkbox label="個人情報あり" checked={data.privacyFlag} onChange={(v) => setData(p => ({...p, privacyFlag: v}))} />
-            <Checkbox label="契約書受領済" checked={data.contractExists} onChange={(v) => setData(p => ({...p, contractExists: v}))} />
-            <Checkbox label="打合記録あり" checked={data.meetingMemoExists} onChange={(v) => setData(p => ({...p, meetingMemoExists: v}))} />
+          <div className="col-span-12 grid grid-cols-4 gap-4 mt-2">
+            <div className="col-span-2 bg-slate-50 p-2 rounded border border-slate-200">
+              <Label>仕様書レベル</Label>
+              <div className="flex gap-2 mt-1">
+                {SPEC_PROFILES.map(sp => (
+                  <label key={sp.value} className="flex items-center gap-1 cursor-pointer">
+                    <input 
+                      type="radio" 
+                      name="specProfile"
+                      checked={data.specProfile === sp.value}
+                      onChange={() => setData(p => ({...p, specProfile: sp.value}))}
+                    />
+                    <span className="text-xs">{sp.label.split(" ")[0]}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="col-span-2 flex flex-wrap gap-4 pt-4">
+              <Checkbox label="顧客仕様書の支給あり" checked={data.specProvidedByClient} onChange={(v) => setData(p => ({...p, specProvidedByClient: v}))} />
+              <Checkbox label="契約書受領済" checked={data.contractExists} onChange={(v) => setData(p => ({...p, contractExists: v}))} />
+              <Checkbox label="個人情報あり" checked={data.privacyFlag} onChange={(v) => setData(p => ({...p, privacyFlag: v}))} />
+            </div>
           </div>
           
           <div className="col-span-12 mt-2">
@@ -152,8 +201,8 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
         </div>
       </Card>
 
-      {/* L2: 運用条件・輸送 */}
-      <Card title="L2 運用・輸送条件" tone="slate" subtitle="作業場所、セキュリティ、搬送コスト計算">
+      {/* L2: 運用・輸送 */}
+      <Card title="L2 運用・輸送条件" tone="slate" subtitle="作業場所、セキュリティ、搬送コスト">
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-6">
             <SelectField 
@@ -207,7 +256,7 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
       </Card>
 
       {/* L3: 業務内訳 */}
-      <Card title="L3 業務内訳（明細行）" tone="emerald" subtitle="“一式”禁止。工程ごとに行を分けて登録。" right={<TinyButton label="＋行を追加" onClick={addWorkItem} kind="primary" />}>
+      <Card title="L3 業務内訳（明細行）" tone="emerald" subtitle="工程ごとに行を分けて登録" right={<TinyButton label="＋行を追加" onClick={addWorkItem} kind="primary" />}>
         <div className="space-y-6">
           {data.workItems.map((w, idx) => {
             const bd = calc.unitBreakdowns[w.id];
@@ -249,13 +298,25 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
                   <div className="col-span-3">
                     <SelectField label="色空間" value={w.colorSpace} onChange={(v) => updateWorkItem(w.id, { colorSpace: v as any })} options={COLOR_OPTS.map(c => ({value:c, label:c}))} />
                   </div>
-                  <div className="col-span-3">
-                    <TextField 
-                      label="形式 (カンマ区切り)" 
-                      value={w.fileFormats.join(",")} 
-                      onChange={(v) => updateWorkItem(w.id, { fileFormats: v.split(",").map(s=>s.trim()).filter(Boolean) })} 
-                      placeholder="TIFF, PDF" 
-                    />
+                  
+                  {/* 出力形式（複数選択 + 自由記述） */}
+                  <div className="col-span-12 bg-slate-50 p-2 rounded border border-slate-200">
+                    <Label>出力形式（複数選択可）</Label>
+                    <div className="flex flex-wrap gap-x-4 gap-y-2 mt-1">
+                      {Object.keys(FORMAT_ADDERS).map((fmt) => (
+                        <label key={fmt} className="flex items-center gap-1 cursor-pointer text-sm">
+                          <input 
+                            type="checkbox" 
+                            checked={w.fileFormats.includes(fmt as FileFormat)} 
+                            onChange={() => toggleFormat(w, fmt as FileFormat)}
+                          />
+                          {fmt}
+                        </label>
+                      ))}
+                    </div>
+                    <div className="mt-2">
+                      <TextField label="その他形式（自由記述）" value={w.fileFormatsFree || ""} onChange={(v) => updateWorkItem(w.id, { fileFormatsFree: v })} placeholder="例: 透かし入りPDF, 高圧縮JPEGなど" />
+                    </div>
                   </div>
 
                   <div className="col-span-12 bg-slate-50 p-3 rounded border border-slate-200 grid grid-cols-4 gap-2">
@@ -290,8 +351,56 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
         </div>
       </Card>
 
+      {/* 特殊工程・実費（復活・強化） */}
+      <Card title="特殊工程・実費" tone="rose" subtitle="市場価格（税込）を入力 → 30%諸経費を自動加算（媒体の場合は標準単価と比較し高い方を適用）" right={<TinyButton label="＋実費追加" onClick={addMiscExpense} kind="primary" />}>
+        <div className="space-y-4">
+          {data.miscExpenses.map((m) => (
+            <div key={m.id} className="rounded-lg border border-rose-200 bg-rose-50/50 p-3 grid grid-cols-12 gap-2 items-end">
+              <div className="col-span-4">
+                <TextField label="品名・工程名" value={m.label} onChange={(v) => updateMiscExpense(m.id, { label: v })} placeholder="例: 外付けHDD 4TB" />
+              </div>
+              <div className="col-span-2">
+                <NumberField label="数量" value={m.qty} onChange={(v) => updateMiscExpense(m.id, { qty: v })} />
+              </div>
+              <div className="col-span-2">
+                <TextField label="単位" value={m.unit} onChange={(v) => updateMiscExpense(m.id, { unit: v })} />
+              </div>
+              <div className="col-span-3">
+                <NumberField label="市場価格(税込)" value={m.unitPrice} onChange={(v) => updateMiscExpense(m.id, { unitPrice: v })} />
+              </div>
+              <div className="col-span-1 pb-1">
+                <TinyButton label="削除" kind="danger" onClick={() => removeMiscExpense(m.id)} />
+              </div>
+              
+              <div className="col-span-12 text-[10px] text-rose-700 flex justify-between items-center bg-white/50 p-1 rounded mt-1">
+                <div>
+                  <span className="font-bold">種別:</span> 
+                  {/* ★修正: e.target.value を "manual" | "expense" にキャスト */}
+                  <select 
+                    className="ml-1 border rounded bg-transparent"
+                    value={m.calcType} 
+                    onChange={(e) => updateMiscExpense(m.id, { calcType: e.target.value as "manual" | "expense" })}
+                  >
+                    <option value="expense">実費購入 (+30%乗せ)</option>
+                    <option value="manual">手入力 (そのまま)</option>
+                  </select>
+                </div>
+                <div>
+                  {m.calcType === "expense" ? (
+                    <span>算出単価: {fmtJPY(Math.round(m.unitPrice * 1.3))} (税抜相当として扱う)</span>
+                  ) : (
+                    <span>算出単価: {fmtJPY(m.unitPrice)}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+          {data.miscExpenses.length === 0 && <div className="text-sm text-slate-400 text-center">実費項目はありません</div>}
+        </div>
+      </Card>
+
       {/* L4: 画像処理・検査 */}
-      <Card title="L4 画像処理・検査・係数パラメータ" tone="amber" subtitle="Q(Quality) / P(Process) / K(K_load) に関わる設定">
+      <Card title="L4 画像処理・検査・係数パラメータ" tone="amber" subtitle="Q(Quality) / P(Process) / K(K_load)">
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-6">
             <SelectField label="検査深度 (Q)" value={data.inspectionLevel} onChange={(v) => setData(p => ({...p, inspectionLevel: v as any}))} options={INSPECTION_LEVELS.map(l => ({value:l, label:l}))} />
@@ -331,7 +440,7 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
           </div>
 
           <div className="col-span-12 grid grid-cols-4 gap-4 bg-amber-50 p-3 rounded mt-2">
-            <Checkbox label="OCR処理 (P)" checked={data.ocr} onChange={(v) => setData(p => ({...p, ocr: v}))} />
+            <Checkbox label="OCR処理 (標準ON)" checked={data.ocr} onChange={(v) => setData(p => ({...p, ocr: v}))} />
             <Checkbox label="OCR校正 (P+)" checked={data.ocrProofread} onChange={(v) => setData(p => ({...p, ocrProofread: v}))} />
           </div>
 
@@ -367,7 +476,7 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
       <Card title="L5 納品・保管・消去" tone="slate" subtitle="成果物の納品形態とアフターフォロー">
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-12">
-            <Label>納品媒体</Label>
+            <Label>納品媒体（チェックで標準単価計上）</Label>
             <div className="flex gap-4 mt-1">
               {["HDD/SSD", "DVD-R", "BD-R", "クラウド"].map(m => (
                 <label key={m} className="flex items-center gap-2 cursor-pointer border px-3 py-2 rounded hover:bg-slate-50">
@@ -382,6 +491,9 @@ export function InputView({ data, setData, calc, addWorkItem, removeWorkItem, up
                   <span className="text-sm">{m}</span>
                 </label>
               ))}
+            </div>
+            <div className="text-[10px] text-slate-500 mt-1">
+              ※特殊なHDD等が必要な場合は、上の「実費」欄に入力してください（標準単価と比較して高い方が適用されます）。
             </div>
           </div>
           <div className="col-span-3">
