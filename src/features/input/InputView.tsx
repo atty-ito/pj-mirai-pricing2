@@ -16,7 +16,6 @@ import { TextAreaField } from "../../components/common/TextAreaField";
 import { NumberField } from "../../components/common/NumberField";
 import { SelectField } from "../../components/common/SelectField";
 import { Checkbox } from "../../components/common/Checkbox";
-import { TinyButton } from "../../components/common/TinyButton";
 import { Label } from "../../components/common/Label";
 
 type Props = {
@@ -30,6 +29,35 @@ type Props = {
   removeMiscExpense: (id: string) => void;
   updateMiscExpense: (id: string, patch: Partial<MiscExpense>) => void;
 };
+
+// 目立つボタンコンポーネント (Local)
+const ActionButton = ({ onClick, label, color }: { onClick: () => void; label: string; color: "blue" | "rose" }) => {
+  const bg = color === "blue" ? "bg-blue-600 hover:bg-blue-500" : "bg-rose-600 hover:bg-rose-500";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white font-bold shadow-md transition-all active:scale-95 ${bg}`}
+    >
+      <span className="text-lg font-black">+</span>
+      <span>{label}</span>
+    </button>
+  );
+};
+
+// 削除ボタン (Local)
+const RemoveButton = ({ onClick }: { onClick: () => void }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-colors"
+    title="削除"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  </button>
+);
 
 export function InputView({ 
   data, setData, calc, 
@@ -59,6 +87,8 @@ export function InputView({
 
   return (
     <div className="space-y-6 pb-20">
+      
+      {/* 上部：プラン選択とサマリ */}
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm sticky top-0 z-10">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-4">
@@ -94,6 +124,7 @@ export function InputView({
         </div>
       </div>
 
+      {/* L1: 基本情報 */}
       <Card title="L1 基本情報・要件定義" tone="indigo" subtitle="顧客情報、管理者、納期、仕様書">
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-3">
@@ -198,6 +229,7 @@ export function InputView({
         </div>
       </Card>
 
+      {/* L2: 運用・輸送 */}
       <Card title="L2 運用・輸送条件" tone="slate" subtitle="作業場所、セキュリティ、搬送コスト">
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-6">
@@ -251,12 +283,15 @@ export function InputView({
         </div>
       </Card>
 
-      <Card title="L3 業務内訳（明細行）" tone="emerald" subtitle="工程ごとに行を分けて登録" right={<TinyButton label="＋行を追加" onClick={addWorkItem} kind="primary" />}>
+      {/* L3: 業務内訳 */}
+      <Card title="L3 業務内訳（明細行）" tone="emerald" subtitle="工程ごとに行を分けて登録" 
+        right={<ActionButton label="行を追加" onClick={addWorkItem} color="blue" />}
+      >
         <div className="space-y-6">
           {data.workItems.map((w, idx) => {
             const bd = calc.unitBreakdowns[w.id];
             return (
-              <div key={w.id} className="rounded-xl border-2 border-emerald-100 bg-white p-4 shadow-sm relative overflow-hidden">
+              <div key={w.id} className="rounded-xl border-2 border-emerald-100 bg-white p-4 shadow-sm relative overflow-hidden transition-all hover:shadow-md">
                 <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
                 <div className="flex justify-between items-start mb-4">
                   <div className="flex items-center gap-2">
@@ -270,7 +305,7 @@ export function InputView({
                       />
                     </div>
                   </div>
-                  <TinyButton label="削除" kind="danger" onClick={() => removeWorkItem(w.id)} />
+                  <RemoveButton onClick={() => removeWorkItem(w.id)} />
                 </div>
 
                 <div className="grid grid-cols-12 gap-4">
@@ -294,6 +329,7 @@ export function InputView({
                     <SelectField label="色空間" value={w.colorSpace} onChange={(v) => updateWorkItem(w.id, { colorSpace: v as any })} options={COLOR_OPTS.map(c => ({value:c, label:c}))} />
                   </div>
                   
+                  {/* 出力形式（複数選択 + 自由記述） */}
                   <div className="col-span-12 bg-slate-50 p-2 rounded border border-slate-200">
                     <Label>出力形式（複数選択可）</Label>
                     <div className="flex flex-wrap gap-x-4 gap-y-2 mt-1">
@@ -341,14 +377,17 @@ export function InputView({
               </div>
             );
           })}
-          {data.workItems.length === 0 && <div className="text-center py-8 text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">作業項目がありません。「＋行を追加」してください。</div>}
+          {data.workItems.length === 0 && <div className="text-center py-8 text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">作業項目がありません。「行を追加」してください。</div>}
         </div>
       </Card>
 
-      <Card title="特殊工程・実費" tone="rose" subtitle="市場価格（税込）を入力 → 30%諸経費を自動加算（媒体の場合は標準単価と比較し高い方を適用）" right={<TinyButton label="＋実費追加" onClick={addMiscExpense} kind="primary" />}>
+      {/* 特殊工程・実費（復活・強化） */}
+      <Card title="特殊工程・実費" tone="rose" subtitle="市場価格（税込）を入力 → 30%諸経費を自動加算（媒体の場合は標準単価と比較し高い方を適用）" 
+        right={<ActionButton label="実費追加" onClick={addMiscExpense} color="rose" />}
+      >
         <div className="space-y-4">
           {data.miscExpenses.map((m) => (
-            <div key={m.id} className="rounded-lg border border-rose-200 bg-rose-50/50 p-3 grid grid-cols-12 gap-2 items-end">
+            <div key={m.id} className="rounded-lg border border-rose-200 bg-rose-50/50 p-3 grid grid-cols-12 gap-2 items-end transition-all hover:bg-rose-100/50">
               <div className="col-span-4">
                 <TextField label="品名・工程名" value={m.label} onChange={(v) => updateMiscExpense(m.id, { label: v })} placeholder="例: 外付けHDD 4TB" />
               </div>
@@ -361,8 +400,8 @@ export function InputView({
               <div className="col-span-3">
                 <NumberField label="市場価格(税込)" value={m.unitPrice} onChange={(v) => updateMiscExpense(m.id, { unitPrice: v })} />
               </div>
-              <div className="col-span-1 pb-1">
-                <TinyButton label="削除" kind="danger" onClick={() => removeMiscExpense(m.id)} />
+              <div className="col-span-1 flex justify-center pb-2">
+                <RemoveButton onClick={() => removeMiscExpense(m.id)} />
               </div>
               
               <div className="col-span-12 text-[10px] text-rose-700 flex justify-between items-center bg-white/50 p-1 rounded mt-1">
@@ -387,10 +426,11 @@ export function InputView({
               </div>
             </div>
           ))}
-          {data.miscExpenses.length === 0 && <div className="text-sm text-slate-400 text-center">実費項目はありません</div>}
+          {data.miscExpenses.length === 0 && <div className="text-sm text-slate-400 text-center py-4">実費項目はありません</div>}
         </div>
       </Card>
 
+      {/* L4: 画像処理・検査 */}
       <Card title="L4 画像処理・検査・係数パラメータ" tone="amber" subtitle="Q(Quality) / P(Process) / K(K_load)">
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-6">
@@ -463,6 +503,7 @@ export function InputView({
         </div>
       </Card>
 
+      {/* L5: 納品・媒体 */}
       <Card title="L5 納品・保管・消去" tone="slate" subtitle="成果物の納品形態とアフターフォロー">
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-12">
@@ -510,6 +551,7 @@ export function InputView({
           </div>
         </div>
       </Card>
+
     </div>
   );
 }

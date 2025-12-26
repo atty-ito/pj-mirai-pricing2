@@ -34,7 +34,7 @@ export type UnitPriceBreakdown = {
   finalUnitPrice: number;
   inspectionMultiplier: number;
   formula: string;
-  factorDetails: string[];
+  factorDetails: string[]; // ★追加: 詳細理由リスト
 };
 
 export type LineItem = {
@@ -71,7 +71,6 @@ export function getBaseUnit(service: ServiceCode, tier: Tier): number {
   return def.min;
 }
 
-// C (Complexity): 原本状態
 export function calcFactorC(item: WorkItem): FactorResult {
   let v = 1.0;
   const reasons: string[] = [];
@@ -82,59 +81,43 @@ export function calcFactorC(item: WorkItem): FactorResult {
   return { value: v, reasons };
 }
 
-// Q (Quality): 画質・検査
-// ★修正: Tierに応じて係数を強制補正する（Premiumは高品質、Ecoは最低限）
 export function calcFactorQ(item: WorkItem, inspectionLevel: string, tier: Tier): FactorResult {
   let v = 1.0;
   const reasons: string[] = [];
   const res = String(item.resolution);
 
-  // 解像度係数
-  // Premium: 常に高精細とみなす補正を入れる
   if (tier === "premium" || res.includes("600")) {
     v += 2.5; 
-    if (tier === "premium") reasons.push("Premium高精細 (+2.50)");
-    else reasons.push("高精細600dpi (+2.50)");
+    reasons.push(tier === "premium" ? "Premium高精細 (+2.50)" : "高精細600dpi (+2.50)");
   } else if (res.includes("400")) {
     v += 0.5; reasons.push("精細400dpi (+0.50)");
   }
   
-  // 検査係数
-  // Premium: 常に二重全数検査
   if (tier === "premium" || inspectionLevel.includes("二重")) {
     v += 0.5; 
-    if (tier === "premium") reasons.push("Premium二重検査 (+0.50)");
-    else reasons.push("二重全数検査 (+0.50)");
+    reasons.push(tier === "premium" ? "Premium二重検査 (+0.50)" : "二重全数検査 (+0.50)");
   } else if (inspectionLevel.includes("全数") && tier !== "economy") {
     v += 0.2; reasons.push("全数検査 (+0.20)");
   }
 
-  // 色空間
   if (tier === "premium" || item.colorSpace === "AdobeRGB") {
     v += 0.1; 
-    if (tier === "premium") reasons.push("Premium色管理 (+0.10)");
-    else reasons.push("AdobeRGB管理 (+0.10)");
+    reasons.push(tier === "premium" ? "Premium色管理 (+0.10)" : "AdobeRGB管理 (+0.10)");
   }
 
   return { value: v, reasons };
 }
 
-// P (Process): 工程
 export function calcFactorP(data: Data, tier: Tier): FactorResult {
   let v = 1.0;
   const reasons: string[] = [];
-  
-  // Premiumは全オプションON
   if (tier === "premium" || data.tempHumidLog) { v += 0.1; reasons.push("環境ログ (+0.10)"); }
   if (tier === "premium" || data.fumigation) { v += 0.1; reasons.push("燻蒸処理 (+0.10)"); }
   if (tier === "premium" || data.ocrProofread) { v += 0.25; reasons.push("OCR校正 (+0.25)"); }
-  
   if (data.namingRule === "ファイル名（完全手入力）") { v += 0.1; reasons.push("手入力命名 (+0.10)"); }
-
   return { value: v, reasons };
 }
 
-// Interaction
 export function calcFactorI(item: WorkItem, data: Data): FactorResult {
   let bonus = 0;
   const reasons: string[] = [];
@@ -144,7 +127,6 @@ export function calcFactorI(item: WorkItem, data: Data): FactorResult {
   return { value: 1.0 + Math.min(bonus, 0.10), reasons };
 }
 
-// K_load
 export function calcFactorK(data: Data): FactorResult {
   const k = Math.max(0, Math.min(50, toInt(data.kLoadPct)));
   const v = 1.0 + k / 100;
@@ -157,7 +139,6 @@ export function applyFactorCap(m: number, data: Data): { value: number; isCapped
   return { value: Math.min(m, cap), isCapped: m > cap };
 }
 
-// 単価計算
 export function computeUnitPrice(tier: Tier, inspectionLevel: string, w: WorkItem, dataMock?: Partial<Data>): UnitPriceBreakdown {
   const data: Data = {
     ...dataMock,
@@ -176,8 +157,8 @@ export function computeUnitPrice(tier: Tier, inspectionLevel: string, w: WorkIte
 
   const base = getBaseUnit(w.service, tier);
   const fc = calcFactorC(w);
-  const fq = calcFactorQ(w, inspectionLevel, tier); // Tierを渡す
-  const fp = calcFactorP(data, tier); // Tierを渡す
+  const fq = calcFactorQ(w, inspectionLevel, tier);
+  const fp = calcFactorP(data, tier);
   const fi = calcFactorI(w, data);
   const fk = calcFactorK(data);
 
@@ -193,9 +174,8 @@ export function computeUnitPrice(tier: Tier, inspectionLevel: string, w: WorkIte
     return sum + (typeof val === "number" ? val : 0);
   }, 0);
   
-  // Premiumは加算もリッチに
   let extraAdder = 0;
-  if (tier === "premium") extraAdder += 20; 
+  if (tier === "premium") extraAdder += 20;
 
   const adders = sizeAdder + fmtAdder + extraAdder;
   const unitPrice = Math.ceil((base * cappedFactor) + adders);

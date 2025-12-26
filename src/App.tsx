@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, ChangeEvent, FormEvent } from "react";
-import { Data, WorkItem, ViewKey } from "./types/pricing";
+import { Data, WorkItem, Tier, ViewKey } from "./types/pricing";
 import { computeCalc } from "./utils/calculations";
 import { suggestQuotationNo, suggestInspectionReportNo, uid } from "./utils/formatters";
 import { ISSUER, SYSTEM_NAME, APP_VERSION } from "./constants/coefficients";
@@ -85,70 +85,70 @@ export default function App() {
   };
 
   const [data, setData] = useState<Data>(() => ({
-    // L1: 基本情報
-    jobNo: "250520001",
-    createdDate: "2025-05-20",
-    subject: "資料室所蔵史料のデジタル化業務",
-    customerName: "学校法人○○学園",
-    customerType: "大学・研究機関",
-    jurisdiction: "資料室",
+    // L1: 基本情報 (国立研究開発法人○○機構)
+    jobNo: "230831001",
+    createdDate: "2023-08-31",
+    subject: "令和5年度 ○○報告スキャン・電子化・長期保存用資材への格納業務",
+    customerName: "国立研究開発法人○○機構",
+    customerType: "官公庁・自治体",
+    jurisdiction: "資料管理担当",
     contactName: "ご担当者 ○○",
     contactTel: "03-0000-0000",
     qualityManager: "高橋 幸一",
     salesManager: "一木",
     supervisorCert: "文書情報管理士1級",
     
-    deadline: "2025-07-31",
-    deadlineType: "絶対納期",
+    deadline: "2024-03-31",
+    deadlineType: "目標納期",
     isExpress: false,
     expressLevel: "通常",
     contractExists: true,
     meetingMemoExists: true,
     
     specStandard: true,
-    specProvidedByClient: false,
+    specProvidedByClient: true,
     specProfile: "standard",
     privacyFlag: false,
     
-    notes: "※経済情勢が極端に変動した場合は除く",
+    notes: "※実際の作業数量に合わせてご請求させていただきます。作業内容は別紙仕様書に従います。",
 
     // L2: 運用・輸送
     workLocation: "社内（高セキュリティ施設）",
     strictCheckIn: true,
     checkInListProvided: true,
-    transportDistanceKm: 15,
+    transportDistanceKm: 20,
     transportTrips: 1,
-    shippingType: "専用便",
-    fumigation: false,
+    shippingType: "セキュリティ専用便",
+    fumigation: true, // 見積項目にあるためON
     tempHumidLog: false,
     neutralPaperBag: "",
     interleaving: false,
-    unbinding: "なし",
+    unbinding: "紐外し", // 前処理にあるため
     rebind: false,
-    preprocessMemo: "劣化状態の確認、付箋位置などの情報記録を実施。",
+    preprocessMemo: "劣化史料取り扱い費を含む。製本を解いて1点ずつの史料に解体。",
 
     // L4: 画像処理・検査
     inspectionLevel: "標準全数検査 (作業者のみ)",
     deltaE: false,
     reflectionSuppression: false,
     deskew: true,
-    trimming: "あり (110%)",
+    trimming: "あり",
     binaryConversion: false,
     binaryThreshold: "固定128",
-    ocr: true,
+    ocr: false, // PDFでは言及なし
     ocrProofread: false,
-    namingRule: "連番のみ",
-    folderStructure: "Root / 書誌ID",
-    indexType: "索引データ（Excel）",
+    namingRule: "連番のみ", // 管理数字(001~460)
+    folderStructure: "タブ(インデックス)単位",
+    indexType: "なし",
     lineFeed: "LF",
 
     // L5: 納品
-    deliveryMedia: [], 
+    deliveryMedia: [], // MiscでHDD計上
     mediaCount: 1,
     labelPrint: true,
     longTermStorageMonths: 0,
     dataDeletionProof: true,
-    disposal: "なし",
+    disposal: "返却のみ",
     deliveryMemo: "",
 
     // 係数パラメータ
@@ -157,7 +157,7 @@ export default function App() {
     factorCap: 2.2,
     capExceptionApproved: false,
 
-    // 互換性維持フィールド
+    // 互換性維持
     quotationNo: "",
     issuerOrg: ISSUER.org,
     
@@ -180,46 +180,86 @@ export default function App() {
     inspectionApprover: "",
     inspectionRemarks: "",
 
-    // 作業項目
+    // 作業項目 (Scan)
     workItems: [
       {
         id: uid("w"),
-        service: "A",
-        title: "史料(A3サイズ以内)のデジタル化",
-        qty: 1350,
+        service: "C", // 手置きスキャン (A3, 劣化)
+        title: "史料(A3サイズ)のスキャニング",
+        qty: 12000,
         unit: "カット",
         sizeClass: "A3",
         resolution: "400dpi",
         colorSpace: "sRGB",
         fileFormats: ["TIFF", "PDF"],
         fileFormatsFree: "",
-        notes: "原寸撮影",
+        notes: "原寸解像度400dpi フルカラー、劣化史料取り扱い費を含む",
         fragile: true,
-        dismantleAllowed: false,
+        dismantleAllowed: true,
         restorationRequired: false,
-        requiresNonContact: true,
+        requiresNonContact: false,
       },
     ],
-    // 実費・特殊工程
+    // 実費・特殊工程 (見積PDFの明細)
     miscExpenses: [
       {
         id: uid("m"),
-        label: "前処理作業（劣化確認・情報記録）",
+        label: "史料の燻蒸(合倉)",
         qty: 1,
         unit: "式",
-        unitPrice: 14400,
-        amount: 14400,
-        note: "劣化状態の確認、付箋位置などの情報記録",
+        unitPrice: 60000,
+        amount: 60000,
+        note: "殺虫・殺菌処理",
         calcType: "manual"
       },
       {
         id: uid("m"),
-        label: "納品用SSD 1TB",
+        label: "前処理 (クリーニング・解体)",
+        qty: 19,
+        unit: "簿冊",
+        unitPrice: 4600,
+        amount: 87400,
+        note: "史料のクリーニング、製本解体",
+        calcType: "manual"
+      },
+      {
+        id: uid("m"),
+        label: "PDF作成 (マルチ加工・ファイル名付与)",
+        qty: 460,
+        unit: "件",
+        unitPrice: 90,
+        amount: 41400,
+        note: "タブ単位マルチPDF、管理番号付与",
+        calcType: "manual"
+      },
+      {
+        id: uid("m"),
+        label: "目次作成 (閲覧用PDF作り込み)",
+        qty: 1,
+        unit: "式",
+        unitPrice: 60000,
+        amount: 60000,
+        note: "閲覧用データ整備",
+        calcType: "manual"
+      },
+      {
+        id: uid("m"),
+        label: "保存用資材収納 (封筒・保存箱)",
+        qty: 1,
+        unit: "式",
+        unitPrice: 335500,
+        amount: 335500,
+        note: "タブ単位封入、ナンバリング、保存箱仕立て",
+        calcType: "manual"
+      },
+      {
+        id: uid("m"),
+        label: "納品用HDD",
         qty: 1,
         unit: "台",
-        unitPrice: 16000,
-        amount: 0,
-        note: "納品用メディア",
+        unitPrice: 15000,
+        amount: 15000,
+        note: "TIFF・PDFデータを格納",
         calcType: "expense"
       }
     ], 
@@ -353,7 +393,6 @@ export default function App() {
         <div className="mb-8 flex items-end justify-between gap-4 no-print border-b border-slate-200 pb-4">
           <div className="flex items-center gap-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white shadow-lg shadow-indigo-200">
-              {/* PCアイコンに変更 */}
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" />
               </svg>
